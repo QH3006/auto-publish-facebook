@@ -1,0 +1,187 @@
+import sys
+import time
+import random
+import logging
+import argparse
+from datetime import datetime
+import config
+import database
+import text_utils
+import cleaner
+import ai_engine
+import fb_poster
+import scanner
+import group_scanner
+import login_helper
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(config.STORAGE_DIR / "app.log", encoding="utf-8")
+    ]
+)
+def execute_single_post():
+    logging.info("--- STARTING SINGLE-IMAGE POSTING SESSION ---")
+    candidates = database.get_unposted_eligible_images(
+        min_days=config.MIN_DAYS_OLD,
+        max_days=config.MAX_DAYS_OLD
+    )
+    if not candidates:
+        logging.warning("No eligible unposted images found in storage for 7-30 days range.")
+        logging.info("Tip: Run scanner (python main.py --scan-now) to fetch new images.")
+        return False
+    selected = random.choice(candidates)
+    image_id = selected["id"]
+    local_path = selected["local_path"]
+    age_days = selected["age_days"]
+    logging.info(f"Selected image ID {image_id} (age: {age_days} days) at: {local_path}")
+    logging.info(f"Generating 3-5 line intro caption using [{config.AI_PROVIDER}]...")
+    caption = ai_engine.generate_caption_for_image(local_path)
+    logging.info(f"Generated caption:\n{caption}")
+    result = fb_poster.publish_photo_to_facebook(local_path, caption)
+    if result.get("success"):
+        database.mark_image_published(image_id)
+        logging.info(f"SUCCESS: Image ID {image_id} published successfully.")
+        return True
+    else:
+        logging.error(f"Failed to publish: {result.get('error')}")
+        return False
+def search_inventory(keyword: str):
+    print(f"\nSearching available books matching: '{keyword}'...")
+    results = database.search_available_books(keyword)
+    if not results:
+        print("No matching books found in current available inventory.\n")
+        return []
+    print(f"Found {len(results)} available book(s):\n")
+    print(f"{'ID':<6} | {'Title':<30} | {'Author':<20} | {'Post Date':<10}")
+    print("-" * 75)
+    for b in results:
+        t = b["title"] or "Untitled"
+        a = b["author"] or "Unknown"
+        print(f"{b['id']:<6} | {t[:28]:<30} | {a[:18]:<20} | {b['post_date']:<10}")
+    print("-" * 75 + "\n")
+    return results
+def show_leads():
+    leads = database.get_leads(status="pending")
+    print("\n" + "=" * 70)
+    print("      POTENTIAL CUSTOMER LEADS FOUND IN GROUPS")
+    print("=" * 70)
+    if not leads:
+        print("No pending customer leads right now.")
+        print("Tip: Run 'python main.py --scan-leads' to scan Facebook groups for buyers.\n")
+        return
+    print(f"Found {len(leads)} customer inquiry(ies) matching books in your inventory:\n")
+    for idx, l in enumerate(leads, 1):
+        print(f"[{idx}] LEAD ID: {l['id']} | MATCHED BOOK: '{l['matched_book_title']}' (Book ID: {l['matched_book_id']})")
+        print(f"    Post Link: {l['post_url']}")
+        print(f"    Content:   \"{l['content_snippet']}\"")
+        print(f"    Detected:  {l['created_at']}")
+        print(f"    Action:    Open the link to comment manually, then run: python main.py --done-lead {l['id']}")
+        print("-" * 70)
+    print()
+def show_status():
+    stats = database.get_stats()
+    print("\n" + "=" * 60)
+    print("      24/7 AUTO BOOK POSTER & INVENTORY STATISTICS")
+    print("=" * 60)
+    print(f" * Total posts tracked:               {stats['total_posts']}")
+    print(f" * Total book images:                 {stats['total_images']}")
+    print(f" * Books AVAILABLE in stock:          {stats['available_in_stock']}")
+    print(f" * Books SOLD OUT:                    {stats['sold_out']}")
+    print(f" * Published images:                  {stats['published_images']}")
+    print(f" * Ready to post (7-30 days):         {stats['eligible_ready_to_post']}")
+    print(f" * Pending Customer Leads (Groups):   {stats['pending_leads']}")
+    print("-" * 60)
+    print(f" * Active AI Provider:                {config.AI_PROVIDER.upper()}")
+    print(f" * Monitored Groups Count:            {len(config.MONITORED_GROUP_URLS)}")
+    print(f" * Browser Profile Directory:         {config.BROWSER_PROFILE_DIR}")
+    print(f" * 3 Daily posting times:             {', '.join(config.POSTING_HOURS)}")
+    print(f" * Daily scan schedule:               {config.SCAN_SCHEDULE_HOUR}")
+    print(f" * Target Page URL:                   {config.TARGET_PAGE_URL}")
+    print("=" * 60 + "\n")
+def run_scheduler_loop():
+    logging.info("24/7 AUTO FACEBOOK POSTER ENGINE STARTED...")
+    logging.info(f"AI Provider: {config.AI_PROVIDER.upper()}")
+    logging.info(f"Daily posting schedule: {', '.join(config.POSTING_HOURS)}")
+    logging.info(f"Scan schedule: {config.SCAN_SCHEDULE_HOUR} | Cleanup schedule: {config.CLEANUP_SCHEDULE_HOUR}")
+    if config.MONITORED_GROUP_URLS:
+        logging.info(f"Group Lead Scanner active across {len(config.MONITORED_GROUP_URLS)} group(s).")
+    last_posted_minute = ""
+    last_scanned_day = ""
+    last_cleaned_day = ""
+    last_lead_scan_time = 0
+    while True:
+        try:
+            now = datetime.now()
+            current_time_str = now.strftime("%H:%M")
+            current_day_str = now.strftime("%Y-%m-%d")
+            current_epoch = time.time()
+            if current_time_str in config.POSTING_HOURS and current_time_str != last_posted_minute:
+                logging.info(f"SCHEDULE TRIGGER: Posting time reached ({current_time_str})")
+                execute_single_post()
+                last_posted_minute = current_time_str
+            if current_time_str == config.SCAN_SCHEDULE_HOUR and current_day_str != last_scanned_day:
+                logging.info(f"SCHEDULE TRIGGER: Starting daily scan ({current_time_str})...")
+                scanner.run_scanner()
+                last_scanned_day = current_day_str
+            if current_time_str == config.CLEANUP_SCHEDULE_HOUR and current_day_str != last_cleaned_day:
+                logging.info(f"SCHEDULE TRIGGER: Starting cleanup for sold books ({current_time_str})...")
+                cleaner.run_cleaner()
+                last_cleaned_day = current_day_str
+            if config.MONITORED_GROUP_URLS:
+                interval_secs = config.LEAD_SCAN_INTERVAL_MINUTES * 60
+                if (current_epoch - last_lead_scan_time) >= interval_secs:
+                    logging.info("SCHEDULE TRIGGER: Scanning Facebook Groups for buyer inquiries...")
+                    group_scanner.scan_facebook_groups()
+                    last_lead_scan_time = current_epoch
+            time.sleep(20)
+        except KeyboardInterrupt:
+            logging.info("Stopped by user (Ctrl+C).")
+            break
+        except Exception as e:
+            logging.error(f"Unexpected error in main loop: {e}")
+            time.sleep(30)
+def main():
+    parser = argparse.ArgumentParser(description="24/7 Automated Facebook Book Poster & Inventory")
+    parser.add_argument("--status", action="store_true", help="Display inventory stats and configuration")
+    parser.add_argument("--post-now", action="store_true", help="Immediately test posting one image")
+    parser.add_argument("--scan-now", action="store_true", help="Immediately scan target Facebook Page")
+    parser.add_argument("--clean-now", action="store_true", help="Clean sold-out expired books")
+    parser.add_argument("--search", type=str, help="Search available books in inventory by keyword")
+    parser.add_argument("--sold", type=int, help="Mark book ID as sold out (e.g., --sold 5)")
+    parser.add_argument("--available", type=int, help="Restore book ID as available (e.g., --available 5)")
+    parser.add_argument("--scan-leads", action="store_true", help="Scan Facebook groups for customers looking for books")
+    parser.add_argument("--leads", action="store_true", help="Show all detected customer leads")
+    parser.add_argument("--done-lead", type=int, help="Mark lead ID as contacted/done (e.g., --done-lead 1)")
+    parser.add_argument("--login-fb", action="store_true", help="Open visible browser to log in to Facebook once")
+    args = parser.parse_args()
+    if args.status:
+        show_status()
+    elif args.post_now:
+        execute_single_post()
+    elif args.scan_now:
+        scanner.run_scanner()
+    elif args.clean_now:
+        cleaner.run_cleaner()
+    elif args.search:
+        search_inventory(args.search)
+    elif args.sold:
+        database.mark_book_sold(args.sold)
+        print(f"[OK] Marked book ID {args.sold} as SOLD OUT.")
+    elif args.available:
+        database.mark_book_available(args.available)
+        print(f"[OK] Restored book ID {args.available} as AVAILABLE.")
+    elif args.scan_leads:
+        group_scanner.scan_facebook_groups()
+    elif args.leads:
+        show_leads()
+    elif args.done_lead:
+        database.mark_lead_done(args.done_lead)
+        print(f"[OK] Marked lead ID {args.done_lead} as CONTACTED.")
+    elif args.login_fb:
+        login_helper.login_facebook_profile()
+    else:
+        run_scheduler_loop()
+if __name__ == "__main__":
+    main()

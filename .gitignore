@@ -1,0 +1,14 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+# Facebook session, profile, and cookies (DO NOT COMMIT)
+cookies.json
+storage/
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+# IDE
+.vscode/
+.idea/
