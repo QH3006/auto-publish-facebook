@@ -25,13 +25,16 @@ def scan_facebook_groups() -> int:
     from playwright.sync_api import sync_playwright
     new_leads_count = 0
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=str(config.BROWSER_PROFILE_DIR),
-            headless=True,
-            args=["--disable-notifications", "--disable-popup-blocking"],
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 900}
-        )
+        launch_kwargs = {
+            "user_data_dir": str(config.BROWSER_PROFILE_DIR),
+            "headless": True,
+            "args": ["--disable-notifications", "--disable-popup-blocking"],
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "viewport": {"width": 1280, "height": 900}
+        }
+        if config.BROWSER_CHANNEL:
+            launch_kwargs["channel"] = config.BROWSER_CHANNEL
+        context = p.chromium.launch_persistent_context(**launch_kwargs)
         if config.COOKIES_PATH.exists():
             import json
             try:

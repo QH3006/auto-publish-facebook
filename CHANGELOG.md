@@ -1,5 +1,8 @@
 # CHANGELOG
 All notable changes to the 24/7 Auto Facebook Book Poster project are documented here.
+## [v1.3.1] - 2026-11-07
+### Added
+- Multi-Browser Support: Added `BROWSER_CHANNEL` in `config.py`. You can now use Windows built-in Microsoft Edge (`channel="msedge"`), system Chrome (`channel="chrome"`), or Playwright bundled Chromium engine (`None`), meaning you never need to install Google Chrome.
 ## [v1.3.0] - 2026-11-07
 ### Added
 - Persistent Browser Profile: Added `login_helper.py` and CLI flag `--login-fb` allowing one-time manual Facebook login in visible browser. Profile is stored in `storage/browser_profile/` so subsequent background scans never expire or require manual cookie exporting.

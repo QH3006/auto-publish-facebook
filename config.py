@@ -45,6 +45,8 @@ OPENAI_MODEL = "gpt-4o-mini"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "llava")
 # 6. FACEBOOK GROUPS LEAD SCANNER
+# Browser channel: None (Playwright engine) | "msedge" (Windows built-in Edge) | "chrome" (System Chrome)
+BROWSER_CHANNEL = None
 MONITORED_GROUP_URLS = [
     # "https://www.facebook.com/groups/example_group",
 ]

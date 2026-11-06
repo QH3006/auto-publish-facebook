@@ -7,12 +7,15 @@ def login_facebook_profile():
     logging.info("Opening visible browser to log in to Facebook...")
     logging.info(f"Session data will be stored in: {config.BROWSER_PROFILE_DIR}")
     with sync_playwright() as p:
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=str(config.BROWSER_PROFILE_DIR),
-            headless=False,
-            args=["--disable-notifications"],
-            viewport={"width": 1280, "height": 900}
-        )
+        launch_kwargs = {
+            "user_data_dir": str(config.BROWSER_PROFILE_DIR),
+            "headless": False,
+            "args": ["--disable-notifications"],
+            "viewport": {"width": 1280, "height": 900}
+        }
+        if config.BROWSER_CHANNEL:
+            launch_kwargs["channel"] = config.BROWSER_CHANNEL
+        context = p.chromium.launch_persistent_context(**launch_kwargs)
         page = context.new_page()
         page.goto("https://www.facebook.com")
         print("\n" + "=" * 65)
