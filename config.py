@@ -3,6 +3,8 @@
 # ==============================================================================
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 STORAGE_DIR = BASE_DIR / "storage"
 IMAGES_DIR = STORAGE_DIR / "images"
@@ -13,7 +15,7 @@ STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 # 1. TARGET FACEBOOK PAGE
-TARGET_PAGE_URL = "https://www.facebook.com/YOUR_PAGE_URL_HERE"
+TARGET_PAGE_URL = "https://www.facebook.com/tiemsachcuathuong/"
 # 2. SCHEDULE CONFIGURATION
 POSTING_HOURS = ["06:00", "11:00", "19:00"]
 SCAN_SCHEDULE_HOUR = "04:30"
@@ -32,13 +34,14 @@ MAX_DAYS_OLD = 30
 PERSISTENT_INVENTORY_MODE = True
 SOLD_RETENTION_DAYS = 7
 DAILY_POSTS_COUNT = 3
-# 4. FACEBOOK GRAPH API CONFIGURATION
+# 4. MY FANPAGE PUBLISHING CONFIGURATION (PLAYWRIGHT BROWSER AUTOMATION)
+# Any Facebook account with Admin/Editor access to this page will work!
+MY_FANPAGE_URL = os.getenv("MY_FANPAGE_URL", "https://www.facebook.com/104950864827739")
 FB_PAGE_ID = os.getenv("FB_PAGE_ID", "104950864827739")
-FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN", "YOUR_PAGE_ACCESS_TOKEN")
 # 5. MULTI-PROVIDER AI CONFIGURATION (GEMINI / OPENAI-COMPATIBLE / LOCAL OLLAMA)
 AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6IdK8kY9brRV0kNgi79MTwcmHSukCzQOkaPn6JBaQBEWA")
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = "gemini-3.5-flash-lite"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = "gpt-4o-mini"
@@ -49,19 +52,24 @@ OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "llava")
 BROWSER_CHANNEL = "msedge"
 MONITORED_GROUP_URLS = [
     # "https://www.facebook.com/groups/example_group",
+    "https://www.facebook.com/groups/225413611557113/",
+    "https://www.facebook.com/groups/1572146076366815/",
+    "https://www.facebook.com/groups/979050155491747/",
+    "https://www.facebook.com/groups/477952032340642/",
+    "https://www.facebook.com/groups/3440463649349254/",
+    "https://www.facebook.com/groups/703844251801628/",
 ]
 BUYER_INTENT_KEYWORDS = [
-    "tìm mua",
-    "cần tìm",
-    "ai có cuốn",
-    "ai có sách",
-    "pass lại",
-    "tìm sách",
-    "mua sách",
-    "cần mua",
-    "pass sách",
-    "xin pass",
-    "nhượng lại",
+    "tìm mua", "cần mua", "hỏi mua", "mua lại", "tìm sách", "cần tìm", "cần sách",
+    "tìm cuốn", "tìm quyển", "tìm bộ", "tìm tập", "ai có cuốn", "ai có quyển", "ai có sách",
+    "ai có bộ", "ai pass", "ai pass lại", "xin pass", "hóng pass", "tìm pass", "ai bán",
+    "bác nào có", "bạn nào có", "ai có không", "ai có ko", "ai có ib", "ai có inbox", "ai còn cuốn", "ai còn quyển"
+]
+SELLER_EXCLUDE_KEYWORDS = [
+    "#pass", "pass nhanh", "pass gấp", "pass all", "mình pass", "em pass", "e pass", "pass bớt",
+    "pass sách", "pass rẻ", "giá pass", "thanh lý", "xả kho", "xả tủ", "dọn nhà", "dọn kệ", "dọn tủ",
+    "lấy all", "lấy cả", "lấy hết", "nhận all ptgd", "ptgd", "ship cod", "ck full", "bank full",
+    "giá trên ảnh", "giá trong ảnh", "giá như hình", "đồng giá"
 ]
 LEAD_SCAN_INTERVAL_MINUTES = 120
 # 7. TELEGRAM BOT ASSISTANT (REMOTE MOBILE LOOKUP & LEAD ALERTS)

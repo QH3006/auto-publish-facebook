@@ -49,4 +49,3 @@ def load_and_apply_settings():
                 logging.info("[INFO] Custom settings loaded from storage/settings.json")
         except Exception as e:
             logging.error(f"Error loading settings.json: {e}")
-

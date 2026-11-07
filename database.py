@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import hashlib
 from datetime import datetime, date
 from typing import List, Dict, Optional
 import config
@@ -29,6 +30,8 @@ def init_db():
                 post_date TEXT,
                 title TEXT DEFAULT '',
                 author TEXT DEFAULT '',
+                category TEXT DEFAULT '',
+                price TEXT DEFAULT '',
                 status TEXT DEFAULT 'available',
                 sold_at TEXT,
                 is_published INTEGER DEFAULT 0,
@@ -37,6 +40,24 @@ def init_db():
                 FOREIGN KEY (post_id) REFERENCES posts(post_id)
             )
         """)
+        cursor.execute("PRAGMA table_info(images)")
+        cols = [c[1] for c in cursor.fetchall()]
+        if "category" not in cols:
+            cursor.execute("ALTER TABLE images ADD COLUMN category TEXT DEFAULT ''")
+        if "price" not in cols:
+            cursor.execute("ALTER TABLE images ADD COLUMN price TEXT DEFAULT ''")
+        if "is_single_book" not in cols:
+            cursor.execute("ALTER TABLE images ADD COLUMN is_single_book INTEGER DEFAULT 1")
+        if "is_reviewed" not in cols:
+            cursor.execute("ALTER TABLE images ADD COLUMN is_reviewed INTEGER DEFAULT 1")
+        if "title" not in cols:
+            cursor.execute("ALTER TABLE images ADD COLUMN title TEXT DEFAULT ''")
+        if "author" not in cols:
+            cursor.execute("ALTER TABLE images ADD COLUMN author TEXT DEFAULT ''")
+        if "status" not in cols:
+            cursor.execute("ALTER TABLE images ADD COLUMN status TEXT DEFAULT 'available'")
+        if "sold_at" not in cols:
+            cursor.execute("ALTER TABLE images ADD COLUMN sold_at TEXT")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS matched_leads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,16 +71,7 @@ def init_db():
                 UNIQUE(post_url, matched_book_id)
             )
         """)
-        cursor.execute("PRAGMA table_info(images)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if "title" not in columns:
-            cursor.execute("ALTER TABLE images ADD COLUMN title TEXT DEFAULT ''")
-        if "author" not in columns:
-            cursor.execute("ALTER TABLE images ADD COLUMN author TEXT DEFAULT ''")
-        if "status" not in columns:
-            cursor.execute("ALTER TABLE images ADD COLUMN status TEXT DEFAULT 'available'")
-        if "sold_at" not in columns:
-            cursor.execute("ALTER TABLE images ADD COLUMN sold_at TEXT")
+        cursor.execute("CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, created_at TEXT)")
         conn.commit()
 def save_post(post_id: str, page_url: str, post_text: str, post_date: str) -> bool:
     with get_connection() as conn:
@@ -71,22 +83,86 @@ def save_post(post_id: str, page_url: str, post_text: str, post_date: str) -> bo
         """, (post_id, page_url, post_text, post_date, now_str))
         conn.commit()
         return cursor.rowcount > 0
-def save_image(post_id: str, image_url: str, local_path: str, image_hash: str, post_date: str, title: str = "", author: str = "") -> bool:
+def is_image_hash_saved(image_hash: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM images WHERE image_hash = ?", (image_hash,))
+        return cursor.fetchone() is not None
+def get_next_available_id() -> int:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM images")
+        rows = cursor.fetchall()
+        if not rows:
+            return 1
+        existing_ids = set(r[0] for r in rows)
+        cand = 1
+        while cand in existing_ids:
+            cand += 1
+        return cand
+def save_image(post_id: str, image_url: str, local_path: str, image_hash: str, post_date: str, title: str = "", author: str = "", category: str = "", price: str = "", is_single_book: int = 1, is_reviewed: int = 0) -> bool:
     with get_connection() as conn:
         cursor = conn.cursor()
         now_str = datetime.now().isoformat()
+        next_id = get_next_available_id()
         try:
             cursor.execute("""
                 INSERT INTO images (
-                    post_id, image_url, local_path, image_hash, post_date, 
-                    title, author, status, is_published, created_at
+                    id, post_id, image_url, local_path, image_hash, post_date, 
+                    title, author, category, price, is_single_book, is_reviewed, status, is_published, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'available', 0, ?)
-            """, (post_id, image_url, local_path, image_hash, post_date, title, author, now_str))
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 0, ?)
+            """, (next_id, post_id, image_url, local_path, image_hash, post_date, title, author, category, price, is_single_book, is_reviewed, now_str))
             conn.commit()
             return True
         except sqlite3.IntegrityError:
             return False
+def add_book_manually(title: str, author: str = "", category: str = "", price: str = "", status: str = "available", local_path: str = "", is_reviewed: int = 1) -> int:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        now_str = datetime.now().isoformat()
+        today_str = date.today().isoformat()
+        dummy_hash = hashlib.sha256(f"manual_{now_str}_{title}".encode()).hexdigest()
+        next_id = get_next_available_id()
+        cursor.execute("""
+            INSERT INTO images (
+                id, post_id, image_url, local_path, image_hash, post_date,
+                title, author, category, price, is_single_book, is_reviewed, status, is_published, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0, ?)
+        """, (next_id, "manual_entry", "", local_path, dummy_hash, today_str, title, author, category, price, is_reviewed, status, now_str))
+        conn.commit()
+        return next_id
+def update_book_details(book_id: int, title: str, author: str = "", price: str = "", is_single_book: int = 1, status: str = "available", is_reviewed: int = 1, category: str = ""):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE images 
+            SET title = ?, author = ?, category = ?, price = ?, is_single_book = ?, status = ?, is_reviewed = ?
+            WHERE id = ?
+        """, (title, author, category, price, is_single_book, status, is_reviewed, book_id))
+        conn.commit()
+def mark_book_reviewed(book_id: int):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE images SET is_reviewed = 1 WHERE id = ?", (book_id,))
+        conn.commit()
+def approve_all_books():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE images SET is_reviewed = 1 WHERE is_reviewed = 0")
+        conn.commit()
+def get_pending_review_books(limit: int = 50) -> List[Dict]:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, post_id, local_path, title, author, category, price, status, is_single_book, is_reviewed, post_date 
+            FROM images 
+            WHERE is_reviewed = 0
+            ORDER BY id DESC 
+            LIMIT ?
+        """, (limit,))
+        return [dict(r) for r in cursor.fetchall()]
 def update_book_metadata(image_id: int, title: str, author: str = ""):
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -110,7 +186,7 @@ def search_available_books(keyword: str) -> List[Dict]:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT i.id, i.post_id, i.local_path, i.title, i.author, i.status, 
+            SELECT i.id, i.post_id, i.local_path, i.title, i.author, i.category, i.price, i.status, 
                    i.post_date, p.post_text
             FROM images i
             LEFT JOIN posts p ON i.post_id = p.post_id
@@ -118,14 +194,15 @@ def search_available_books(keyword: str) -> List[Dict]:
               AND (
                   LOWER(i.title) LIKE ?
                   OR LOWER(i.author) LIKE ?
+                  OR LOWER(i.category) LIKE ?
                   OR LOWER(p.post_text) LIKE ?
               )
             ORDER BY i.id DESC
-        """, (kw_pattern, kw_pattern, kw_pattern))
+        """, (kw_pattern, kw_pattern, kw_pattern, kw_pattern))
         rows = cursor.fetchall()
         if not rows:
             cursor.execute("""
-                SELECT i.id, i.post_id, i.local_path, i.title, i.author, i.status, 
+                SELECT i.id, i.post_id, i.local_path, i.title, i.author, i.category, i.price, i.status, 
                        i.post_date, p.post_text
                 FROM images i
                 LEFT JOIN posts p ON i.post_id = p.post_id
@@ -136,11 +213,12 @@ def search_available_books(keyword: str) -> List[Dict]:
             for item in all_available:
                 title = (item["title"] or "").strip().lower()
                 author = (item["author"] or "").strip().lower()
-                if (title and len(title) >= 3 and title in cleaned_query) or (author and len(author) >= 3 and author in cleaned_query):
+                cat = (item["category"] or "").strip().lower()
+                if (title and len(title) >= 3 and title in cleaned_query) or (author and len(author) >= 3 and author in cleaned_query) or (cat and len(cat) >= 3 and cat in cleaned_query):
                     matched_rows.append(item)
             rows = matched_rows
         for row in rows:
-            if os.path.exists(row["local_path"]):
+            if not row["local_path"] or os.path.exists(row["local_path"]):
                 results.append(dict(row))
     return results
 def get_unposted_eligible_images(min_days: int = 7, max_days: int = 30) -> List[Dict]:
@@ -149,10 +227,10 @@ def get_unposted_eligible_images(min_days: int = 7, max_days: int = 30) -> List[
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, post_id, local_path, post_date, image_url, title, author 
+            SELECT id, post_id, local_path, post_date, image_url, title, author, category, price, is_reviewed 
             FROM images 
-            WHERE is_published = 0 AND status = 'available'
-            ORDER BY RANDOM()
+            WHERE is_published = 0 AND status = 'available' AND (is_single_book = 1 OR is_single_book IS NULL)
+            ORDER BY is_reviewed DESC, RANDOM()
         """)
         rows = cursor.fetchall()
         for row in rows:
@@ -163,7 +241,7 @@ def get_unposted_eligible_images(min_days: int = 7, max_days: int = 30) -> List[
             except Exception:
                 continue
             if min_days <= age_days <= max_days:
-                if os.path.exists(row["local_path"]):
+                if not row["local_path"] or os.path.exists(row["local_path"]):
                     results.append({
                         "id": row["id"],
                         "post_id": row["post_id"],
@@ -171,6 +249,7 @@ def get_unposted_eligible_images(min_days: int = 7, max_days: int = 30) -> List[
                         "post_date": row["post_date"],
                         "title": row["title"],
                         "author": row["author"],
+                        "category": row["category"],
                         "age_days": age_days,
                         "image_url": row["image_url"]
                     })
@@ -219,11 +298,32 @@ def get_expired_images() -> List[Dict]:
                 except Exception:
                     pass
     return expired
-def delete_image_record(image_id: int):
+def get_all_books(limit: int = 500) -> List[Dict]:
     with get_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, post_id, local_path, title, author, category, price, status, is_published, is_single_book, is_reviewed, post_date, created_at 
+            FROM images 
+            ORDER BY id DESC 
+            LIMIT ?
+        """, (limit,))
+        return [dict(r) for r in cursor.fetchall()]
+def delete_image_record(image_id: int) -> bool:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT local_path FROM images WHERE id = ?", (image_id,))
+        row = cursor.fetchone()
+        if not row:
+            return False
+        local_path = row[0]
         cursor.execute("DELETE FROM images WHERE id = ?", (image_id,))
         conn.commit()
+        if local_path and os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+            except Exception:
+                pass
+        return True
 def save_lead(group_url: str, post_url: str, content_snippet: str, matched_book_id: int, matched_book_title: str) -> bool:
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -243,17 +343,27 @@ def save_lead(group_url: str, post_url: str, content_snippet: str, matched_book_
 def get_leads(status: str = "pending") -> List[Dict]:
     with get_connection() as conn:
         cursor = conn.cursor()
+        query = "SELECT l.*, i.price as book_price, i.category as book_category, i.local_path as book_image FROM matched_leads l LEFT JOIN images i ON l.matched_book_id = i.id"
         if status == "all":
-            cursor.execute("SELECT * FROM matched_leads ORDER BY id DESC")
+            cursor.execute(query + " ORDER BY l.id DESC")
         else:
-            cursor.execute("SELECT * FROM matched_leads WHERE status = ? ORDER BY id DESC", (status,))
+            cursor.execute(query + " WHERE l.status = ? ORDER BY l.id DESC", (status,))
         rows = cursor.fetchall()
         return [dict(r) for r in rows]
-def mark_lead_done(lead_id: int):
+def update_lead_status(lead_id: int, status: str) -> bool:
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("UPDATE matched_leads SET status = 'contacted' WHERE id = ?", (lead_id,))
+        cursor.execute("UPDATE matched_leads SET status = ? WHERE id = ?", (status, lead_id))
         conn.commit()
+        return True
+def delete_lead(lead_id: int) -> bool:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM matched_leads WHERE id = ?", (lead_id,))
+        conn.commit()
+        return True
+def mark_lead_done(lead_id: int):
+    return update_lead_status(lead_id, "contacted")
 def get_stats() -> Dict:
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -279,4 +389,38 @@ def get_stats() -> Dict:
         "eligible_ready_to_post": eligible,
         "pending_leads": pending_leads
     }
+DEFAULT_CATEGORIES = [
+    "Văn học Việt Nam", "Văn học phương Tây", "Văn học Trung Quốc", "Văn học Nhật Bản",
+    "Kỹ năng sống / Tâm lý", "Kinh tế / Kinh doanh", "Lịch sử / Văn hóa", "Manga / Light Novel",
+    "Thiếu nhi", "Trinh thám / Kinh dị", "Tản văn", "Ngôn tình", "Âm nhạc / Nghệ thuật", "Ngoại văn"
+]
+def get_all_categories() -> List[str]:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM categories ORDER BY name ASC")
+        rows = [r[0] for r in cursor.fetchall()]
+        if not rows:
+            for cat in DEFAULT_CATEGORIES:
+                cursor.execute("INSERT OR IGNORE INTO categories (name, created_at) VALUES (?, ?)", (cat, datetime.now().isoformat()))
+            conn.commit()
+            return sorted(DEFAULT_CATEGORIES)
+        return rows
+def add_category(name: str) -> bool:
+    clean = name.strip()
+    if not clean:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO categories (name, created_at) VALUES (?, ?)", (clean, datetime.now().isoformat()))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+def delete_category(name: str) -> bool:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM categories WHERE name = ?", (name.strip(),))
+        conn.commit()
+        return True
 init_db()

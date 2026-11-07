@@ -29,8 +29,12 @@ def login_facebook_profile():
             input("Press Enter here AFTER logging in successfully...")
         except Exception:
             time.sleep(30)
+        import json
+        cookies = context.cookies()
+        with open(config.COOKIES_PATH, "w", encoding="utf-8") as f:
+            json.dump(cookies, f, indent=2)
         context.close()
-    logging.info("[OK] Facebook session and cookies saved permanently to browser profile.")
+    logging.info("[OK] Facebook session and cookies saved permanently to browser profile and cookies.json.")
     logging.info("[OK] From now on, background scanners will use this saved login automatically.")
 if __name__ == "__main__":
     login_facebook_profile()

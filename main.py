@@ -26,14 +26,16 @@ logging.basicConfig(
         logging.FileHandler(config.STORAGE_DIR / "app.log", encoding="utf-8")
     ]
 )
-def execute_single_post():
+def execute_single_post(min_days: int = None, max_days: int = None):
     logging.info("--- STARTING SINGLE-IMAGE POSTING SESSION ---")
+    p_min = min_days if min_days is not None else config.MIN_DAYS_OLD
+    p_max = max_days if max_days is not None else config.MAX_DAYS_OLD
     candidates = database.get_unposted_eligible_images(
-        min_days=config.MIN_DAYS_OLD,
-        max_days=config.MAX_DAYS_OLD
+        min_days=p_min,
+        max_days=p_max
     )
     if not candidates:
-        logging.warning("No eligible unposted images found in storage for 7-30 days range.")
+        logging.warning(f"No eligible unposted images found in storage for {p_min}-{p_max} days range.")
         logging.info("Tip: Run scanner (python main.py --scan-now) to fetch new images.")
         return False
     selected = random.choice(candidates)
@@ -150,7 +152,7 @@ def run_scheduler_loop():
                 interval_secs = config.LEAD_SCAN_INTERVAL_MINUTES * 60
                 if (current_epoch - last_lead_scan_time) >= interval_secs:
                     logging.info("SCHEDULE TRIGGER: Scanning Facebook Groups for buyer inquiries...")
-                    group_scanner.scan_facebook_groups()
+                    group_scanner.scan_facebook_groups(max_days=2, deep_scan=False)
                     last_lead_scan_time = current_epoch
             time.sleep(20)
         except KeyboardInterrupt:

@@ -21,7 +21,7 @@ d:\auto publish facebook\
 ├── database.py           # SQLite database with persistent inventory & matched leads
 ├── text_utils.py         # Unicode font normalizer & Blacklist filter
 ├── cleaner.py            # Cleans only sold-out books after retention period
-├── fb_poster.py          # Background Facebook Graph API publisher (with Dry-run mode)
+├── fb_poster.py          # Background Playwright browser publisher for Facebook Fanpage
 ├── requirements.txt      # Python dependencies
 ├── CHANGELOG.md          # Version history and upgrade notes
 ├── run_247.bat           # 1-click Windows runner

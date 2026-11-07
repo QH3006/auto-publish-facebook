@@ -1,5 +1,18 @@
 # CHANGELOG
 All notable changes to the 24/7 Auto Facebook Book Poster project are documented here.
+## [v1.8.0] - 2026-11-07
+### Added
+- Database Web Inventory Dashboard (`web_admin.py`): Built-in visual book inventory table on port 8080 (`http://localhost:8080`). Displays live book cover thumbnails, title, author, price, availability status, real-time live search filter, and instant one-click `[Đánh dấu ĐÃ BÁN]` button.
+- Book Price Tracking (`database.py`): Added `price` column to `images` table to store price extracted from photo captions or labels.
+- Single vs Multi-Book Detection (`ai_engine.py`): AI Gemini inspects photos to distinguish between single-book photos (`is_single_book: true`) and book collections/piles. Database rotator strictly prioritizes single-book photos for daily posts.
+- Bookstore Tone & Style Mimicry (`storage/style_samples.txt`): AI reads real bookstore sample posts to match exact line breaks, warm tone, vocabulary, and hashtag habits.
+## [v1.7.0] - 2026-11-07
+### Changed
+- Removed all Facebook Graph API and Access Token dependencies: Eliminated Meta Developer App review requirements, expiring access tokens, and Business Manager asset linking deadlocks.
+- Upgraded Fanpage Publisher (`fb_poster.py`): Now operates 100% via Playwright browser automation using the persistent profile/cookies of any Facebook account with Admin/Editor access to the Page.
+- Automatic Profile Switching: Automatically detects and handles Facebook New Pages Experience "Chuyển ngay" (Switch Profile) prompt before publishing.
+- Dual Session Persistence (`login_helper.py`): Saves authentication state to both `storage/browser_profile/` and `cookies.json`.
+- Automatic Error Diagnostics: Automatically captures debug screenshot to `storage/fb_post_error.png` if any UI step encounters an issue.
 ## [v1.6.0] - 2026-11-07
 ### Added
 - Headless Server Remote Management (`web_admin.py`): Built-in web dashboard (port 8080) for headless operation.

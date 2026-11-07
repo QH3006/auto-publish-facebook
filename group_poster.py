@@ -39,6 +39,12 @@ def post_single_book_to_group(group_url: str = None) -> bool:
         try:
             page.goto(target_group, wait_until="domcontentloaded", timeout=60000)
             time.sleep(4)
+            if "login" in page.url.lower() or page.locator("input[name='email'], input[name='pass']").count() > 0:
+                logging.error("Facebook session has expired.")
+                import telegram_bot
+                telegram_bot.send_alert_to_all("[CẢNH BÁO] Phiên đăng nhập Facebook của bot đã hết hạn! Vui lòng mở Terminal chạy: python main.py --login-fb để cập nhật lại.")
+                context.close()
+                return False
             composer_trigger = page.locator("div[role='button']:has-text('Viết gì đó...'), div[role='button']:has-text('Bạn viết gì đi...'), div[role='button']:has-text('Tạo bài viết công khai...'), span:has-text('Viết gì đó...')")
             if composer_trigger.count() == 0:
                 logging.error("Could not locate group post creation box. Ensure account has joined the group.")
@@ -75,4 +81,3 @@ def post_single_book_to_group(group_url: str = None) -> bool:
             return False
 if __name__ == "__main__":
     post_single_book_to_group()
-
