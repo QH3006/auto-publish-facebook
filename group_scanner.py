@@ -6,6 +6,7 @@ from datetime import datetime
 import config
 import database
 import text_utils
+import telegram_bot
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 def has_buyer_intent(text: str) -> bool:
     if not text:
@@ -53,6 +54,17 @@ def scan_facebook_groups() -> int:
                 for _ in range(8):
                     page.mouse.wheel(0, 1500)
                     time.sleep(2)
+                try:
+                    expand_buttons = page.locator("span:has-text('Xem thêm bình luận'), span:has-text('bình luận khác'), span:has-text('Xem câu trả lời'), div[role='button']:has-text('bình luận')").all()
+                    for btn in expand_buttons[:8]:
+                        try:
+                            if btn.is_visible():
+                                btn.click(timeout=1500)
+                                time.sleep(0.5)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 post_cards = page.locator("div[role='article']").all()
                 logging.info(f"Analyzing {len(post_cards)} posts/comments in group...")
                 for card in post_cards:
@@ -87,6 +99,11 @@ def scan_facebook_groups() -> int:
                             if saved:
                                 new_leads_count += 1
                                 logging.info(f"[LEAD MATCH] Customer looking for '{book['title']}' | Link: {post_link}")
+                                telegram_bot.notify_new_lead({
+                                    "matched_book_title": book["title"],
+                                    "content_snippet": snippet,
+                                    "post_url": post_link
+                                })
                     except Exception as err:
                         logging.debug(f"Error processing card: {err}")
                         continue

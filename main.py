@@ -13,6 +13,11 @@ import fb_poster
 import scanner
 import group_scanner
 import login_helper
+import telegram_bot
+import group_poster
+import web_admin
+import settings_manager
+import threading
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -97,8 +102,10 @@ def show_status():
     print(f" * Monitored Groups Count:            {len(config.MONITORED_GROUP_URLS)}")
     print(f" * Browser Profile Directory:         {config.BROWSER_PROFILE_DIR}")
     print(f" * 3 Daily posting times:             {', '.join(config.POSTING_HOURS)}")
+    print(f" * Daily group posting time (1 post): {config.GROUP_POSTING_HOUR}")
     print(f" * Daily scan schedule:               {config.SCAN_SCHEDULE_HOUR}")
     print(f" * Target Page URL:                   {config.TARGET_PAGE_URL}")
+    print(f" * Web Admin Dashboard (LAN):         http://{web_admin.get_local_ip()}:8080")
     print("=" * 60 + "\n")
 def run_scheduler_loop():
     logging.info("24/7 AUTO FACEBOOK POSTER ENGINE STARTED...")
@@ -107,9 +114,15 @@ def run_scheduler_loop():
     logging.info(f"Scan schedule: {config.SCAN_SCHEDULE_HOUR} | Cleanup schedule: {config.CLEANUP_SCHEDULE_HOUR}")
     if config.MONITORED_GROUP_URLS:
         logging.info(f"Group Lead Scanner active across {len(config.MONITORED_GROUP_URLS)} group(s).")
+    if config.TELEGRAM_BOT_TOKEN:
+        logging.info("Starting background Telegram Bot listener...")
+        threading.Thread(target=telegram_bot.run_telegram_bot_listener, daemon=True).start()
+    logging.info(f"Starting Web Admin Dashboard at: http://{web_admin.get_local_ip()}:8080 (LAN only for editing)...")
+    threading.Thread(target=web_admin.run_web_admin, kwargs={"port": 8080}, daemon=True).start()
     last_posted_minute = ""
     last_scanned_day = ""
     last_cleaned_day = ""
+    last_group_posted_day = ""
     last_lead_scan_time = 0
     while True:
         try:
@@ -121,6 +134,10 @@ def run_scheduler_loop():
                 logging.info(f"SCHEDULE TRIGGER: Posting time reached ({current_time_str})")
                 execute_single_post()
                 last_posted_minute = current_time_str
+            if config.TARGET_POST_GROUP_URLS and current_time_str == config.GROUP_POSTING_HOUR and current_day_str != last_group_posted_day:
+                logging.info(f"SCHEDULE TRIGGER: Daily Group posting 1 post ({current_time_str})...")
+                group_poster.post_single_book_to_group()
+                last_group_posted_day = current_day_str
             if current_time_str == config.SCAN_SCHEDULE_HOUR and current_day_str != last_scanned_day:
                 logging.info(f"SCHEDULE TRIGGER: Starting daily scan ({current_time_str})...")
                 scanner.run_scanner()
@@ -143,9 +160,11 @@ def run_scheduler_loop():
             logging.error(f"Unexpected error in main loop: {e}")
             time.sleep(30)
 def main():
+    settings_manager.load_and_apply_settings()
     parser = argparse.ArgumentParser(description="24/7 Automated Facebook Book Poster & Inventory")
     parser.add_argument("--status", action="store_true", help="Display inventory stats and configuration")
     parser.add_argument("--post-now", action="store_true", help="Immediately test posting one image")
+    parser.add_argument("--post-group-now", action="store_true", help="Immediately test posting 1 image to Facebook Group")
     parser.add_argument("--scan-now", action="store_true", help="Immediately scan target Facebook Page")
     parser.add_argument("--clean-now", action="store_true", help="Clean sold-out expired books")
     parser.add_argument("--search", type=str, help="Search available books in inventory by keyword")
@@ -155,11 +174,15 @@ def main():
     parser.add_argument("--leads", action="store_true", help="Show all detected customer leads")
     parser.add_argument("--done-lead", type=int, help="Mark lead ID as contacted/done (e.g., --done-lead 1)")
     parser.add_argument("--login-fb", action="store_true", help="Open visible browser to log in to Facebook once")
+    parser.add_argument("--bot", action="store_true", help="Run standalone Telegram Bot listener")
+    parser.add_argument("--admin", action="store_true", help="Run standalone Web Admin controller (port 8080)")
     args = parser.parse_args()
     if args.status:
         show_status()
     elif args.post_now:
         execute_single_post()
+    elif args.post_group_now:
+        group_poster.post_single_book_to_group()
     elif args.scan_now:
         scanner.run_scanner()
     elif args.clean_now:
@@ -181,6 +204,10 @@ def main():
         print(f"[OK] Marked lead ID {args.done_lead} as CONTACTED.")
     elif args.login_fb:
         login_helper.login_facebook_profile()
+    elif args.bot:
+        telegram_bot.run_telegram_bot_listener()
+    elif args.admin:
+        web_admin.run_web_admin()
     else:
         run_scheduler_loop()
 if __name__ == "__main__":

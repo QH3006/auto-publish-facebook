@@ -34,4 +34,3 @@ def login_facebook_profile():
     logging.info("[OK] From now on, background scanners will use this saved login automatically.")
 if __name__ == "__main__":
     login_facebook_profile()
-

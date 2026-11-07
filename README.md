@@ -3,6 +3,7 @@ Automated Facebook page crawler, book inventory catalog, daily publisher, and Gr
 - Daily Auto-Poster: Posts 3 times daily (06:00, 11:00, 19:00) with 1 image and 3-5 line AI-generated book intro captions.
 - Persistent Book Inventory: Retains books permanently in SQLite until marked as sold (`sold_out`).
 - Group Lead Scanner: Scans target Facebook Groups for buyer inquiries ("tìm mua", "cần tìm", "ai có cuốn"...), matches with your inventory, and saves clickable leads so you can manually review and comment safely.
+- Group Auto-Poster: Automatically posts exactly 1 book post per day to a target Facebook group.
 - Persistent Browser Profile: Log in once with `python main.py --login-fb` and session data is remembered permanently in `storage/browser_profile/` without needing to export cookies repeatedly.
 - Multi-AI Provider: Supports Google Gemini, OpenAI-compatible (DeepSeek / Groq), or offline Local Ollama.
 ---
@@ -12,6 +13,8 @@ d:\auto publish facebook\
 ├── config.py             # Configuration (URLs, Schedule, API Keys, Groups, Keywords)
 ├── main.py               # Master 24/7 runner and CLI commands
 ├── login_helper.py       # One-time Facebook login helper with persistent profile
+├── group_poster.py       # Automated Facebook Group auto-poster (1 post/day)
+├── telegram_bot.py       # Ultra-lightweight Telegram assistant (<15MB RAM) for mobile lookup
 ├── group_scanner.py      # Automated Facebook Groups buyer lead finder
 ├── scanner.py            # Playwright crawler that extracts books into inventory
 ├── ai_engine.py          # Multi-provider AI engine (Gemini, DeepSeek/OpenAI, Local Ollama)
@@ -48,6 +51,10 @@ d:\auto publish facebook\
   `python main.py --done-lead 1`
 * Search available books in stock:
   `python main.py --search "Nhà Giả Kim"`
+* Test posting 1 book to Fanpage immediately:
+  `python main.py --post-now`
+* Test posting 1 book to Facebook Group immediately:
+  `python main.py --post-group-now`
 * Mark a book as SOLD OUT:
   `python main.py --sold 5`
 * Start 24/7 background scheduler:

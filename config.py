@@ -33,11 +33,11 @@ PERSISTENT_INVENTORY_MODE = True
 SOLD_RETENTION_DAYS = 7
 DAILY_POSTS_COUNT = 3
 # 4. FACEBOOK GRAPH API CONFIGURATION
-FB_PAGE_ID = os.getenv("FB_PAGE_ID", "YOUR_FB_PAGE_ID")
+FB_PAGE_ID = os.getenv("FB_PAGE_ID", "104950864827739")
 FB_PAGE_ACCESS_TOKEN = os.getenv("FB_PAGE_ACCESS_TOKEN", "YOUR_PAGE_ACCESS_TOKEN")
 # 5. MULTI-PROVIDER AI CONFIGURATION (GEMINI / OPENAI-COMPATIBLE / LOCAL OLLAMA)
 AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6IdK8kY9brRV0kNgi79MTwcmHSukCzQOkaPn6JBaQBEWA")
 GEMINI_MODEL = "gemini-2.5-flash"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
@@ -46,7 +46,7 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "llava")
 # 6. FACEBOOK GROUPS LEAD SCANNER
 # Browser channel: None (Playwright engine) | "msedge" (Windows built-in Edge) | "chrome" (System Chrome)
-BROWSER_CHANNEL = None
+BROWSER_CHANNEL = "msedge"
 MONITORED_GROUP_URLS = [
     # "https://www.facebook.com/groups/example_group",
 ]
@@ -64,3 +64,12 @@ BUYER_INTENT_KEYWORDS = [
     "nhượng lại",
 ]
 LEAD_SCAN_INTERVAL_MINUTES = 120
+# 7. TELEGRAM BOT ASSISTANT (REMOTE MOBILE LOOKUP & LEAD ALERTS)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+# 8. FACEBOOK GROUP AUTO-POSTER (EXACTLY 1 POST PER DAY)
+TARGET_POST_GROUP_URLS = [
+    # "https://www.facebook.com/groups/example_group",
+    "https://www.facebook.com/groups/1374822839964696",
+]
+GROUP_POSTING_HOUR = "09:30"

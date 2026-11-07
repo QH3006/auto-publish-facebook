@@ -1,5 +1,21 @@
 # CHANGELOG
 All notable changes to the 24/7 Auto Facebook Book Poster project are documented here.
+## [v1.6.0] - 2026-11-07
+### Added
+- Headless Server Remote Management (`web_admin.py`): Built-in web dashboard (port 8080) for headless operation.
+- System Resource Monitoring: Real-time tracking of CPU (%), RAM (GB/used/percent), Disk storage, and uptime. Accessible from anywhere or via Telegram `/system` command.
+- LAN Security Enforcement: Changes to system configuration (adding/removing monitored groups, changing AI providers, updating API keys) are strictly allowed ONLY from within the local network (LAN / private IP). Remote requests outside LAN are restricted to view-only mode.
+- Persistent Settings Manager (`settings_manager.py`): Saves overrides to `storage/settings.json` without modifying source code files directly.
+## [v1.5.0] - 2026-11-07
+### Added
+- Facebook Group Auto-Poster (`group_poster.py`): Posts exactly 1 book post per day to a target Facebook group using the persistent browser profile, complete with image attachment and AI-generated caption.
+- Deep Comment Scanning: Enhanced `group_scanner.py` to automatically click and expand hidden comments ("Xem thêm bình luận") to capture buyer requests in comment threads.
+- CLI flag `--post-group-now`: Test posting 1 book to target group immediately.
+## [v1.4.0] - 2026-11-07
+### Added
+- Telegram Bot Assistant (`telegram_bot.py`): Zero-bloat, pure requests-based bot consuming < 15MB RAM. Allows bookseller to look up inventory by texting book names, receive photo of cover with status, and tap one-click inline buttons to mark books as SOLD OUT from mobile devices anywhere (4G/Wi-Fi).
+- Lead Alert Integration: Automatically dispatches new Facebook group buyer inquiry notifications with direct post links to Telegram.
+- CLI flag `--bot`: Run standalone Telegram Bot listener.
 ## [v1.3.1] - 2026-11-07
 ### Added
 - Multi-Browser Support: Added `BROWSER_CHANNEL` in `config.py`. You can now use Windows built-in Microsoft Edge (`channel="msedge"`), system Chrome (`channel="chrome"`), or Playwright bundled Chromium engine (`None`), meaning you never need to install Google Chrome.
