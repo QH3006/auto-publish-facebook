@@ -298,16 +298,46 @@ def get_expired_images() -> List[Dict]:
                 except Exception:
                     pass
     return expired
-def get_all_books(limit: int = 500) -> List[Dict]:
+def query_books(keyword: str = "", category: str = "", min_price: int = None, max_price: int = None, status: str = "", is_reviewed: int = None, sort_by: str = "id_desc", limit: int = 500) -> List[Dict]:
+    conditions = []
+    params = []
+    if keyword:
+        kw = f"%{keyword.strip().lower()}%"
+        conditions.append("(LOWER(title) LIKE ? OR LOWER(author) LIKE ?)")
+        params.extend([kw, kw])
+    if category:
+        conditions.append("LOWER(category) = ?")
+        params.append(category.strip().lower())
+    if min_price is not None:
+        conditions.append("CAST(REPLACE(REPLACE(price, '.', ''), ',', '') AS INTEGER) >= ?")
+        params.append(int(min_price))
+    if max_price is not None:
+        conditions.append("CAST(REPLACE(REPLACE(price, '.', ''), ',', '') AS INTEGER) <= ?")
+        params.append(int(max_price))
+    if status:
+        conditions.append("status = ?")
+        params.append(status.strip())
+    if is_reviewed is not None:
+        conditions.append("is_reviewed = ?")
+        params.append(int(is_reviewed))
+    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    order_clause = "ORDER BY id DESC"
+    if sort_by == "id_asc":
+        order_clause = "ORDER BY id ASC"
+    elif sort_by == "price_asc":
+        order_clause = "ORDER BY CAST(REPLACE(REPLACE(price, '.', ''), ',', '') AS INTEGER) ASC"
+    elif sort_by == "price_desc":
+        order_clause = "ORDER BY CAST(REPLACE(REPLACE(price, '.', ''), ',', '') AS INTEGER) DESC"
+    elif sort_by == "title_asc":
+        order_clause = "ORDER BY title COLLATE NOCASE ASC"
+    query = f"SELECT id, post_id, local_path, title, author, category, price, status, is_published, is_single_book, is_reviewed, post_date, created_at FROM images {where_clause} {order_clause} LIMIT ?"
+    params.append(limit)
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, post_id, local_path, title, author, category, price, status, is_published, is_single_book, is_reviewed, post_date, created_at 
-            FROM images 
-            ORDER BY id DESC 
-            LIMIT ?
-        """, (limit,))
+        cursor.execute(query, tuple(params))
         return [dict(r) for r in cursor.fetchall()]
+def get_all_books(limit: int = 500) -> List[Dict]:
+    return query_books(limit=limit)
 def delete_image_record(image_id: int) -> bool:
     with get_connection() as conn:
         cursor = conn.cursor()

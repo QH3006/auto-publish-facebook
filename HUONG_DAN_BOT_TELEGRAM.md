@@ -10,6 +10,8 @@ Bot Telegram `@tiemsachcuathuongbot` đóng vai trò là trợ lý ảo từ xa 
 | :--- | :--- | :--- |
 | `/start` hoặc `/help` | `/help` | Hiển thị bảng menu hướng dẫn toàn bộ lệnh. |
 | `/tim` | `/tim Rừng Na Uy` hoặc `/tim Higashino` | Tìm sách có sẵn trong kho theo tựa đề hoặc tên tác giả. |
+| `/theloai` | `/theloai Văn học Nhật Bản` | Lọc các cuốn sách theo thể loại chỉ định còn hàng. |
+| `/gia` | `/gia 50k 100k` hoặc `/gia 70` | Lọc sách theo khoảng giá hoặc mức giá tối đa còn hàng. |
 | `/kho` | `/kho` | Xem danh sách tóm tắt các cuốn sách sẵn sàng bán trong kho. |
 | `/them` | `/them Tựa Sách \| Tác Giả \| Thể Loại \| Giá` | Thêm sách mới trực tiếp vào kho (tự động lấp vào các ID còn khuyết). |
 | `/ban` | `/ban 146` | Đánh dấu sách có ID tương ứng là **Đã bán** (`sold_out`). |
@@ -45,3 +47,4 @@ Ngoài bot Telegram, hệ thống còn cung cấp giao diện Web Admin trực q
   * Thêm, xóa danh mục thể loại mới tùy ý.
   * Xem, sửa thông tin giá, bìa sách và trạng thái kho.
   * Quản lý danh sách khách hỏi mua (mở bài đăng trực tiếp, đổi trạng thái Đã liên hệ, Xóa lead).
+

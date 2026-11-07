@@ -5,6 +5,7 @@ import time
 import socket
 import logging
 import ipaddress
+import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from datetime import datetime
@@ -74,7 +75,17 @@ class AdminRequestHandler(BaseHTTPRequestHandler):
         elif path == '/api/metrics':
             self._send_json(get_system_metrics())
         elif path == '/api/books':
-            books = database.get_all_books(500)
+            query_str = self.path.split('?')[1] if '?' in self.path else ''
+            p = urllib.parse.parse_qs(query_str) if query_str else {}
+            kw = p.get('q', [''])[0]
+            cat = p.get('category', [''])[0]
+            min_p = p.get('min_price', [None])[0]
+            max_p = p.get('max_price', [None])[0]
+            status = p.get('status', [''])[0]
+            sort_by = p.get('sort_by', ['id_desc'])[0]
+            min_p_int = int(min_p) if min_p and str(min_p).isdigit() else None
+            max_p_int = int(max_p) if max_p and str(max_p).isdigit() else None
+            books = database.query_books(keyword=kw, category=cat, min_price=min_p_int, max_price=max_p_int, status=status, sort_by=sort_by)
             self._send_json(books)
         elif path == '/api/leads':
             leads = database.get_leads("all")

@@ -94,6 +94,8 @@ def handle_text_message(chat_id: str, text: str):
         msg = (
             "Chào bạn! Đây là Bot Tra Cứu & Quản Lý Kho Tiệm Sách Của Thương.\n\n"
             "- Nhập tên cuốn sách bất kỳ (hoặc /tim <tên sách>) để kiểm tra tình trạng còn hàng.\n"
+            "- /theloai <thể loại> : Tìm sách theo thể loại (ví dụ: /theloai Văn học Nhật Bản).\n"
+            "- /gia <từ> <đến> : Lọc sách theo tầm giá (ví dụ: /gia 50k 100k).\n"
             "- /them <Tựa> | <Tác giả> | <Thể loại> | <Giá> : Tự thêm cuốn sách mới hoàn toàn vào kho.\n"
             "- /soat : Soát lại các ảnh sách mới quét (xem bìa, giá, thể loại để duyệt hoặc sửa tay).\n"
             "- /duyet <ID> : Xác nhận duyệt sách ID đã đúng.\n"
@@ -231,6 +233,49 @@ def handle_text_message(chat_id: str, text: str):
             f"* Khách chờ phản hồi: {stats['pending_leads']}"
         )
         send_message(chat_id, msg)
+        return
+    if t.startswith("/theloai "):
+        cat_query = t[9:].strip()
+        books = database.query_books(category=cat_query, status="available", limit=10)
+        if not books:
+            send_message(chat_id, f"Không tìm thấy sách nào thuộc thể loại '{cat_query}' còn hàng.")
+            return
+        send_message(chat_id, f"Tìm thấy {len(books)} cuốn sách thể loại '{cat_query}' còn hàng:")
+        for b in books[:3]:
+            disp_price = format_price_vnd(b.get('price'))
+            price_str = f"Giá bán: {disp_price}\n" if b.get('price') else ""
+            caption = f"📖 Tên: {b.get('title')}\n✍️ Tác giả: {b.get('author') or 'Chưa rõ'}\n🏷️ Thể loại: {b.get('category')}\n💰 {price_str}📦 Trạng thái: CÒN HÀNG"
+            markup = {"inline_keyboard": [[{"text": f"❌ Đã bán (#{b['id']})", "callback_data": f"sold_{b['id']}"}]]}
+            send_photo(chat_id, b.get("local_path"), caption, markup)
+        return
+    if t.startswith("/gia "):
+        parts = t[5:].strip().split()
+        p1 = parts[0] if len(parts) >= 1 else ""
+        p2 = parts[1] if len(parts) >= 2 else ""
+        def parse_k(v):
+            if not v:
+                return None
+            c = v.lower().replace("k", "").replace(".", "").replace(",", "").strip()
+            if c.isdigit():
+                n = int(c)
+                return n * 1000 if n < 1000 else n
+            return None
+        min_p = parse_k(p1)
+        max_p = parse_k(p2)
+        if min_p is not None and max_p is None and len(parts) == 1:
+            max_p = min_p
+            min_p = 0
+        books = database.query_books(min_price=min_p, max_price=max_p, status="available", limit=10)
+        p_desc = f"từ {format_price_vnd(min_p)} đến {format_price_vnd(max_p)}" if min_p and max_p else f"mức giá {format_price_vnd(max_p or min_p)}"
+        if not books:
+            send_message(chat_id, f"Không tìm thấy sách nào trong tầm giá {p_desc} còn hàng.")
+            return
+        send_message(chat_id, f"Tìm thấy {len(books)} cuốn sách {p_desc} còn hàng:")
+        for b in books[:3]:
+            disp_price = format_price_vnd(b.get('price'))
+            caption = f"📖 Tên: {b.get('title')}\n✍️ Tác giả: {b.get('author') or 'Chưa rõ'}\n🏷️ Thể loại: {b.get('category')}\n💰 Giá: {disp_price}"
+            markup = {"inline_keyboard": [[{"text": f"❌ Đã bán (#{b['id']})", "callback_data": f"sold_{b['id']}"}]]}
+            send_photo(chat_id, b.get("local_path"), caption, markup)
         return
     search_query = t
     if t.startswith("/tim ") or t.startswith("/sach "):

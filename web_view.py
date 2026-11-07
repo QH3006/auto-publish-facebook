@@ -71,11 +71,20 @@ def get_admin_html(local_ip: str) -> str:
     <div id="tab-books" class="tab-content active">
         <div class="toolbar">
             <div class="filter-group">
-                <input type="text" id="search-input" class="form-input" style="width: 220px;" placeholder="🔍 Tìm tên sách, tác giả..." oninput="renderTable()">
-                <select id="category-filter" class="form-input" style="width: 160px;" onchange="renderTable()"><option value="">Tất cả thể loại</option></select>
-                <select id="status-filter" class="form-input" style="width: 140px;" onchange="renderTable()">
-                    <option value="">Tất cả trạng thái</option><option value="available">Còn hàng</option><option value="sold_out">Đã bán</option><option value="pending_review">Chờ soát lại</option>
+                <input type="text" id="search-input" class="form-input" style="width: 170px;" placeholder="🔍 Tên sách, tác giả..." oninput="renderTable()">
+                <select id="category-filter" class="form-input" style="width: 145px;" onchange="renderTable()"><option value="">Tất cả thể loại</option></select>
+                <select id="price-filter" class="form-input" style="width: 135px;" onchange="onPriceFilterChange()">
+                    <option value="">Tất cả mức giá</option><option value="0-50000">&lt; 50.000 đ</option><option value="50000-100000">50k - 100k</option><option value="100000-150000">100k - 150k</option><option value="150000-99999999">&gt; 150.000 đ</option><option value="custom">Tùy chỉnh giá...</option>
                 </select>
+                <input type="number" id="min-price-input" class="form-input" style="width: 75px; display:none;" placeholder="Từ đ" oninput="renderTable()">
+                <input type="number" id="max-price-input" class="form-input" style="width: 75px; display:none;" placeholder="Đến đ" oninput="renderTable()">
+                <select id="status-filter" class="form-input" style="width: 125px;" onchange="renderTable()">
+                    <option value="">Tất cả trạng thái</option><option value="available">Còn hàng</option><option value="sold_out">Đã bán</option><option value="pending_review">Chờ soát</option>
+                </select>
+                <select id="sort-filter" class="form-input" style="width: 135px;" onchange="renderTable()">
+                    <option value="id_desc">Mới nhất (#ID ↓)</option><option value="id_asc">Cũ nhất (#ID ↑)</option><option value="price_asc">Giá tăng dần</option><option value="price_desc">Giá giảm dần</option><option value="title_asc">Tên sách (A-Z)</option>
+                </select>
+                <button class="btn btn-outline btn-sm" onclick="resetFilters()" title="Đặt lại bộ lọc">❌ Đặt lại</button>
             </div>
             <div style="font-size:12px; color:#8b949e;" id="count-info">Hiển thị: 0 cuốn</div>
         </div>
@@ -106,101 +115,35 @@ def get_admin_html(local_ip: str) -> str:
 </div>
 <div id="edit-modal" class="modal">
     <div class="modal-box">
-        <div class="modal-header">
-            <div class="modal-title">✏️ Chỉnh Sửa & Soát Lại Thông Tin Sách</div>
-            <button class="close-btn" onclick="closeModal('edit-modal')">&times;</button>
-        </div>
-        <div style="text-align:center;">
-            <img id="m-preview" src="" class="preview-img" alt="Ảnh bìa sách">
-        </div>
+        <div class="modal-header"><div class="modal-title">✏️ Chỉnh Sửa & Soát Lại Thông Tin Sách</div><button class="close-btn" onclick="closeModal('edit-modal')">&times;</button></div>
+        <div style="text-align:center;"><img id="m-preview" src="" class="preview-img" alt="Bìa sách"></div>
         <input type="hidden" id="m-id">
-        <div class="form-group">
-            <label class="form-label">Tựa Sách</label>
-            <input type="text" id="m-title" class="form-input">
-        </div>
-        <div class="form-group">
-            <label class="form-label">Tác Giả</label>
-            <input type="text" id="m-author" class="form-input">
-        </div>
-        <div class="form-group">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <label class="form-label">Thể Loại Sách</label>
-                <a href="javascript:void(0)" onclick="openCatModal()" style="font-size:11px; color:#58a6ff; text-decoration:none;">+ Quản lý thể loại</a>
-            </div>
-            <select id="m-category" class="form-input"></select>
-        </div>
-        <div class="form-group">
-            <label class="form-label">Giá Bán (VNĐ)</label>
-            <input type="text" id="m-price" class="form-input" placeholder="Ví dụ: 35000">
-        </div>
-        <div class="form-group">
-            <label class="form-label">Trạng Thái Kho</label>
-            <select id="m-status" class="form-input">
-                <option value="available">Còn hàng</option>
-                <option value="sold_out">Đã bán</option>
-            </select>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-danger btn-sm" onclick="deleteCurrentBook()">🗑️ Xóa Sách Này</button>
-            <div style="flex:1;"></div>
-            <button class="btn btn-outline" onclick="closeModal('edit-modal')">Hủy Bỏ</button>
-            <button class="btn" onclick="saveBookEdit()">💾 Lưu & Đã Soát</button>
-        </div>
+        <div class="form-group"><label class="form-label">Tựa Sách</label><input type="text" id="m-title" class="form-input"></div>
+        <div class="form-group"><label class="form-label">Tác Giả</label><input type="text" id="m-author" class="form-input"></div>
+        <div class="form-group"><div style="display:flex; justify-content:space-between; align-items:center;"><label class="form-label">Thể Loại Sách</label><a href="javascript:void(0)" onclick="openCatModal()" style="font-size:11px; color:#58a6ff; text-decoration:none;">+ Quản lý thể loại</a></div><select id="m-category" class="form-input"></select></div>
+        <div class="form-group"><label class="form-label">Giá Bán (VNĐ)</label><input type="text" id="m-price" class="form-input" placeholder="Ví dụ: 35000"></div>
+        <div class="form-group"><label class="form-label">Trạng Thái Kho</label><select id="m-status" class="form-input"><option value="available">Còn hàng</option><option value="sold_out">Đã bán</option></select></div>
+        <div class="modal-footer"><button class="btn btn-danger btn-sm" onclick="deleteCurrentBook()">🗑️ Xóa Sách</button><div style="flex:1;"></div><button class="btn btn-outline" onclick="closeModal('edit-modal')">Hủy</button><button class="btn" onclick="saveBookEdit()">💾 Lưu</button></div>
     </div>
 </div>
 <div id="add-modal" class="modal">
     <div class="modal-box">
-        <div class="modal-header">
-            <div class="modal-title">➕ Thêm Sách Mới Thủ Công Vào Kho</div>
-            <button class="close-btn" onclick="closeModal('add-modal')">&times;</button>
-        </div>
-        <div class="form-group">
-            <label class="form-label">Tựa Sách (*)</label>
-            <input type="text" id="add-title" class="form-input" placeholder="Nhập tên sách chính xác">
-        </div>
-        <div class="form-group">
-            <label class="form-label">Tác Giả</label>
-            <input type="text" id="add-author" class="form-input" placeholder="Tên tác giả hoặc dịch giả">
-        </div>
-        <div class="form-group">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <label class="form-label">Thể Loại Sách</label>
-                <a href="javascript:void(0)" onclick="openCatModal()" style="font-size:11px; color:#58a6ff; text-decoration:none;">+ Quản lý thể loại</a>
-            </div>
-            <select id="add-category" class="form-input"></select>
-        </div>
-        <div class="form-group">
-            <label class="form-label">Giá Bán (VNĐ)</label>
-            <input type="text" id="add-price" class="form-input" placeholder="Ví dụ: 50000 hoặc 50k">
-        </div>
-        <div class="form-group">
-            <label class="form-label">Trạng Thái</label>
-            <select id="add-status" class="form-input">
-                <option value="available">Còn hàng</option>
-                <option value="sold_out">Đã bán</option>
-            </select>
-        </div>
-        <div class="modal-footer">
-            <button class="btn btn-outline" onclick="closeModal('add-modal')">Hủy Bỏ</button>
-            <button class="btn" onclick="submitAddBook()">➕ Thêm Vào Kho</button>
-        </div>
+        <div class="modal-header"><div class="modal-title">➕ Thêm Sách Mới Thủ Công Vào Kho</div><button class="close-btn" onclick="closeModal('add-modal')">&times;</button></div>
+        <div class="form-group"><label class="form-label">Tựa Sách (*)</label><input type="text" id="add-title" class="form-input" placeholder="Nhập tên sách chính xác"></div>
+        <div class="form-group"><label class="form-label">Tác Giả</label><input type="text" id="add-author" class="form-input" placeholder="Tên tác giả hoặc dịch giả"></div>
+        <div class="form-group"><div style="display:flex; justify-content:space-between; align-items:center;"><label class="form-label">Thể Loại Sách</label><a href="javascript:void(0)" onclick="openCatModal()" style="font-size:11px; color:#58a6ff; text-decoration:none;">+ Quản lý thể loại</a></div><select id="add-category" class="form-input"></select></div>
+        <div class="form-group"><label class="form-label">Giá Bán (VNĐ)</label><input type="text" id="add-price" class="form-input" placeholder="Ví dụ: 50000 hoặc 50k"></div>
+        <div class="form-group"><label class="form-label">Trạng Thái</label><select id="add-status" class="form-input"><option value="available">Còn hàng</option><option value="sold_out">Đã bán</option></select></div>
+        <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('add-modal')">Hủy</button><button class="btn" onclick="submitAddBook()">➕ Thêm Vào Kho</button></div>
     </div>
 </div>
 <div id="cat-modal" class="modal">
     <div class="modal-box" style="width: 480px;">
-        <div class="modal-header">
-            <div class="modal-title">🏷️ Quản Lý Danh Mục Thể Loại</div>
-            <button class="close-btn" onclick="closeModal('cat-modal')">&times;</button>
-        </div>
-        <div style="display:flex; gap:8px; margin-bottom:12px;">
-            <input type="text" id="new-cat-name" class="form-input" placeholder="Tên thể loại mới (ví dụ: Trinh thám, Kinh dị...)">
-            <button class="btn btn-sm" onclick="submitAddCategory()" style="white-space:nowrap;">➕ Thêm</button>
-        </div>
+        <div class="modal-header"><div class="modal-title">🏷️ Quản Lý Danh Mục Thể Loại</div><button class="close-btn" onclick="closeModal('cat-modal')">&times;</button></div>
+        <div style="display:flex; gap:8px; margin-bottom:12px;"><input type="text" id="new-cat-name" class="form-input" placeholder="Tên thể loại mới (ví dụ: Trinh thám, Kinh dị...)"><button class="btn btn-sm" onclick="submitAddCategory()" style="white-space:nowrap;">➕ Thêm</button></div>
         <div class="form-label" style="margin-bottom:6px;">Danh sách thể loại hiện có:</div>
         <div id="cat-list-container" style="display:flex; flex-wrap:wrap; max-height:220px; overflow-y:auto; padding:6px; background:#0d1117; border:1px solid #30363d; border-radius:6px;"></div>
-        <div class="modal-footer">
-            <button class="btn btn-outline btn-sm" onclick="closeModal('cat-modal')">Đóng</button>
-        </div>
+        <div class="modal-footer"><button class="btn btn-outline btn-sm" onclick="closeModal('cat-modal')">Đóng</button></div>
     </div>
 </div>
 <script>
@@ -304,10 +247,46 @@ function fetchBooks() {{
         document.getElementById('books-tbody').innerHTML = '<tr><td colspan="8" style="text-align:center; color:#f85149;">Không thể tải dữ liệu sách.</td></tr>';
     }});
 }}
+function onPriceFilterChange() {{
+    let val = document.getElementById('price-filter').value;
+    let minInp = document.getElementById('min-price-input');
+    let maxInp = document.getElementById('max-price-input');
+    if (val === 'custom') {{
+        minInp.style.display = 'inline-block';
+        maxInp.style.display = 'inline-block';
+    }} else {{
+        minInp.style.display = 'none'; minInp.value = '';
+        maxInp.style.display = 'none'; maxInp.value = '';
+    }}
+    renderTable();
+}}
+function resetFilters() {{
+    document.getElementById('search-input').value = '';
+    document.getElementById('category-filter').value = '';
+    document.getElementById('price-filter').value = '';
+    document.getElementById('min-price-input').value = '';
+    document.getElementById('min-price-input').style.display = 'none';
+    document.getElementById('max-price-input').value = '';
+    document.getElementById('max-price-input').style.display = 'none';
+    document.getElementById('status-filter').value = '';
+    document.getElementById('sort-filter').value = 'id_desc';
+    renderTable();
+}}
 function renderTable() {{
     let query = document.getElementById('search-input').value.toLowerCase().trim();
     let catFilter = document.getElementById('category-filter').value.trim();
     let statusFilter = document.getElementById('status-filter').value.trim();
+    let priceVal = document.getElementById('price-filter').value;
+    let sortVal = document.getElementById('sort-filter').value;
+    let minP = NaN, maxP = NaN;
+    if (priceVal === 'custom') {{
+        minP = parseInt(document.getElementById('min-price-input').value);
+        maxP = parseInt(document.getElementById('max-price-input').value);
+    }} else if (priceVal && priceVal.includes('-')) {{
+        let pts = priceVal.split('-');
+        minP = parseInt(pts[0]);
+        maxP = parseInt(pts[1]);
+    }}
     let filtered = allBooks.filter(b => {{
         let mQuery = !query || (b.title && b.title.toLowerCase().includes(query)) || (b.author && b.author.toLowerCase().includes(query));
         let mCat = !catFilter || (b.category && b.category.trim() === catFilter);
@@ -315,11 +294,22 @@ function renderTable() {{
         if (statusFilter === 'available') mStatus = b.status === 'available';
         else if (statusFilter === 'sold_out') mStatus = b.status === 'sold_out';
         else if (statusFilter === 'pending_review') mStatus = b.is_reviewed === 0;
-        return mQuery && mCat && mStatus;
+        let pNum = b.price ? parseInt(String(b.price).replace(/[^0-9]/g, '')) : NaN;
+        let mPrice = true;
+        if (!isNaN(minP)) mPrice = mPrice && (!isNaN(pNum) && pNum >= minP);
+        if (!isNaN(maxP)) mPrice = mPrice && (!isNaN(pNum) && pNum <= maxP);
+        return mQuery && mCat && mStatus && mPrice;
     }});
-    document.getElementById('count-info').innerText = 'Hiển thị: ' + filtered.length + ' / ' + allBooks.length + ' cuốn';
+    if (sortVal === 'id_asc') filtered.sort((a,b) => a.id - b.id);
+    else if (sortVal === 'id_desc') filtered.sort((a,b) => b.id - a.id);
+    else if (sortVal === 'price_asc') filtered.sort((a,b) => (parseInt(a.price)||0) - (parseInt(b.price)||0));
+    else if (sortVal === 'price_desc') filtered.sort((a,b) => (parseInt(b.price)||0) - (parseInt(a.price)||0));
+    else if (sortVal === 'title_asc') filtered.sort((a,b) => (a.title||'').localeCompare(b.title||'', 'vi'));
+    let totalVal = filtered.reduce((acc, b) => acc + (parseInt(b.price) || 0), 0);
+    let totalStr = totalVal > 0 ? ' | ' + totalVal.toLocaleString('vi-VN') + ' đ' : '';
+    document.getElementById('count-info').innerText = 'Hiển thị: ' + filtered.length + ' / ' + allBooks.length + ' cuốn' + totalStr;
     if (!filtered.length) {{
-        document.getElementById('books-tbody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 20px; color:#8b949e;">Không tìm thấy sách nào phù hợp.</td></tr>';
+        document.getElementById('books-tbody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 20px; color:#8b949e;">Không tìm thấy sách nào phù hợp điều kiện lọc.</td></tr>';
         return;
     }}
     let html = '';
