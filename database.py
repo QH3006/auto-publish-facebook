@@ -42,22 +42,9 @@ def init_db():
         """)
         cursor.execute("PRAGMA table_info(images)")
         cols = [c[1] for c in cursor.fetchall()]
-        if "category" not in cols:
-            cursor.execute("ALTER TABLE images ADD COLUMN category TEXT DEFAULT ''")
-        if "price" not in cols:
-            cursor.execute("ALTER TABLE images ADD COLUMN price TEXT DEFAULT ''")
-        if "is_single_book" not in cols:
-            cursor.execute("ALTER TABLE images ADD COLUMN is_single_book INTEGER DEFAULT 1")
-        if "is_reviewed" not in cols:
-            cursor.execute("ALTER TABLE images ADD COLUMN is_reviewed INTEGER DEFAULT 1")
-        if "title" not in cols:
-            cursor.execute("ALTER TABLE images ADD COLUMN title TEXT DEFAULT ''")
-        if "author" not in cols:
-            cursor.execute("ALTER TABLE images ADD COLUMN author TEXT DEFAULT ''")
-        if "status" not in cols:
-            cursor.execute("ALTER TABLE images ADD COLUMN status TEXT DEFAULT 'available'")
-        if "sold_at" not in cols:
-            cursor.execute("ALTER TABLE images ADD COLUMN sold_at TEXT")
+        for col_name, col_def in [("category", "TEXT DEFAULT ''"), ("price", "TEXT DEFAULT ''"), ("is_single_book", "INTEGER DEFAULT 1"), ("is_reviewed", "INTEGER DEFAULT 1"), ("title", "TEXT DEFAULT ''"), ("author", "TEXT DEFAULT ''"), ("status", "TEXT DEFAULT 'available'"), ("sold_at", "TEXT")]:
+            if col_name not in cols:
+                cursor.execute(f"ALTER TABLE images ADD COLUMN {col_name} {col_def}")
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS matched_leads (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +60,20 @@ def init_db():
         """)
         cursor.execute("CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, created_at TEXT)")
         conn.commit()
+    normalize_image_paths()
+def normalize_image_paths():
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, local_path FROM images WHERE local_path IS NOT NULL AND local_path != ''")
+            for r in cursor.fetchall():
+                fname = os.path.basename(r[1])
+                new_p = str(config.IMAGES_DIR / fname)
+                if r[1] != new_p and os.path.exists(new_p):
+                    cursor.execute("UPDATE images SET local_path = ? WHERE id = ?", (new_p, r[0]))
+            conn.commit()
+    except Exception:
+        pass
 def save_post(post_id: str, page_url: str, post_text: str, post_date: str) -> bool:
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -266,11 +267,15 @@ def get_unposted_eligible_images(min_days: int = 7, max_days: int = 30) -> List[
             except Exception:
                 continue
             if min_days <= age_days <= max_days:
-                if not row["local_path"] or os.path.exists(row["local_path"]):
+                lp = row["local_path"]
+                if lp and not os.path.exists(lp):
+                    cand = str(config.IMAGES_DIR / os.path.basename(lp))
+                    if os.path.exists(cand): lp = cand
+                if not lp or os.path.exists(lp):
                     results.append({
                         "id": row["id"],
                         "post_id": row["post_id"],
-                        "local_path": row["local_path"],
+                        "local_path": lp,
                         "post_date": row["post_date"],
                         "title": row["title"],
                         "author": row["author"],
