@@ -55,9 +55,15 @@ def get_local_ip() -> str:
 def is_local_network(ip_str: str) -> bool:
     if ip_str in ["127.0.0.1", "localhost", "::1"]:
         return True
+    if ip_str.startswith("::ffff:"):
+        ip_str = ip_str[7:]
     try:
         ip = ipaddress.ip_address(ip_str)
-        return ip.is_private or ip.is_loopback or (ip in ipaddress.ip_network('100.64.0.0/10'))
+        if ip.is_private or ip.is_loopback:
+            return True
+        if ip.version == 4 and (ip in ipaddress.ip_network('100.64.0.0/10')):
+            return True
+        return False
     except Exception:
         return False
 def get_system_metrics() -> dict:
