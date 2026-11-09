@@ -88,18 +88,22 @@ def is_image_hash_saved(image_hash: str) -> bool:
         cursor = conn.cursor()
         cursor.execute("SELECT id FROM images WHERE image_hash = ?", (image_hash,))
         return cursor.fetchone() is not None
+def is_duplicate_book(title: str, price: str) -> bool:
+    if not title or not title.strip() or not price or not str(price).strip():
+        return False
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT id FROM images WHERE LOWER(TRIM(title)) = ? AND price = ? AND status = 'available'", (title.strip().lower(), str(price).strip()))
+        return c.fetchone() is not None
+def is_post_saved(post_id: str) -> bool:
+    with get_connection() as conn:
+        return conn.execute("SELECT post_id FROM posts WHERE post_id = ?", (post_id,)).fetchone() is not None
 def get_next_available_id() -> int:
     with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM images")
-        rows = cursor.fetchall()
-        if not rows:
-            return 1
-        existing_ids = set(r[0] for r in rows)
-        cand = 1
-        while cand in existing_ids:
-            cand += 1
-        return cand
+        existing = {r[0] for r in conn.execute("SELECT id FROM images").fetchall()}
+        c = 1
+        while c in existing: c += 1
+        return c
 def save_image(post_id: str, image_url: str, local_path: str, image_hash: str, post_date: str, title: str = "", author: str = "", category: str = "", price: str = "", is_single_book: int = 1, is_reviewed: int = 0) -> bool:
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -182,23 +186,42 @@ def mark_book_available(image_id: int):
 def search_available_books(keyword: str) -> List[Dict]:
     results = []
     cleaned_query = keyword.strip().lower()
+    clean_id = cleaned_query.lstrip("#")
     kw_pattern = f"%{cleaned_query}%"
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT i.id, i.post_id, i.local_path, i.title, i.author, i.category, i.price, i.status, 
-                   i.post_date, p.post_text
-            FROM images i
-            LEFT JOIN posts p ON i.post_id = p.post_id
-            WHERE i.status = 'available'
-              AND (
-                  LOWER(i.title) LIKE ?
-                  OR LOWER(i.author) LIKE ?
-                  OR LOWER(i.category) LIKE ?
-                  OR LOWER(p.post_text) LIKE ?
-              )
-            ORDER BY i.id DESC
-        """, (kw_pattern, kw_pattern, kw_pattern, kw_pattern))
+        if clean_id.isdigit():
+            cursor.execute("""
+                SELECT i.id, i.post_id, i.local_path, i.title, i.author, i.category, i.price, i.status, 
+                       i.post_date, p.post_text
+                FROM images i
+                LEFT JOIN posts p ON i.post_id = p.post_id
+                WHERE i.status = 'available'
+                  AND (
+                      i.id = ?
+                      OR LOWER(i.title) LIKE ?
+                      OR LOWER(i.author) LIKE ?
+                      OR LOWER(i.category) LIKE ?
+                      OR LOWER(p.post_text) LIKE ?
+                  )
+                ORDER BY i.id DESC
+            """, (int(clean_id), kw_pattern, kw_pattern, kw_pattern, kw_pattern))
+        else:
+            cursor.execute("""
+                SELECT i.id, i.post_id, i.local_path, i.title, i.author, i.category, i.price, i.status, 
+                       i.post_date, p.post_text
+                FROM images i
+                LEFT JOIN posts p ON i.post_id = p.post_id
+                WHERE i.status = 'available'
+                  AND (
+                      CAST(i.id AS TEXT) LIKE ?
+                      OR LOWER(i.title) LIKE ?
+                      OR LOWER(i.author) LIKE ?
+                      OR LOWER(i.category) LIKE ?
+                      OR LOWER(p.post_text) LIKE ?
+                  )
+                ORDER BY i.id DESC
+            """, (kw_pattern, kw_pattern, kw_pattern, kw_pattern, kw_pattern))
         rows = cursor.fetchall()
         if not rows:
             cursor.execute("""
@@ -210,11 +233,13 @@ def search_available_books(keyword: str) -> List[Dict]:
             """)
             all_available = cursor.fetchall()
             matched_rows = []
+            generic_skip = {"sách hay", "sách cũ", "sách mới", "sách", "truyện", "tiểu thuyết"}
             for item in all_available:
                 title = (item["title"] or "").strip().lower()
                 author = (item["author"] or "").strip().lower()
-                cat = (item["category"] or "").strip().lower()
-                if (title and len(title) >= 3 and title in cleaned_query) or (author and len(author) >= 3 and author in cleaned_query) or (cat and len(cat) >= 3 and cat in cleaned_query):
+                if title in generic_skip:
+                    continue
+                if (title and len(title) >= 4 and title in cleaned_query) or (author and len(author) >= 4 and author in cleaned_query):
                     matched_rows.append(item)
             rows = matched_rows
         for row in rows:
@@ -302,9 +327,15 @@ def query_books(keyword: str = "", category: str = "", min_price: int = None, ma
     conditions = []
     params = []
     if keyword:
-        kw = f"%{keyword.strip().lower()}%"
-        conditions.append("(LOWER(title) LIKE ? OR LOWER(author) LIKE ?)")
-        params.extend([kw, kw])
+        kw_raw = keyword.strip()
+        clean_id = kw_raw.lstrip("#")
+        kw = f"%{kw_raw.lower()}%"
+        if clean_id.isdigit():
+            conditions.append("(id = ? OR CAST(id AS TEXT) LIKE ? OR LOWER(title) LIKE ? OR LOWER(author) LIKE ?)")
+            params.extend([int(clean_id), kw, kw, kw])
+        else:
+            conditions.append("(CAST(id AS TEXT) LIKE ? OR LOWER(title) LIKE ? OR LOWER(author) LIKE ?)")
+            params.extend([kw, kw, kw])
     if category:
         conditions.append("LOWER(category) = ?")
         params.append(category.strip().lower())
@@ -336,7 +367,7 @@ def query_books(keyword: str = "", category: str = "", min_price: int = None, ma
         cursor = conn.cursor()
         cursor.execute(query, tuple(params))
         return [dict(r) for r in cursor.fetchall()]
-def get_all_books(limit: int = 500) -> List[Dict]:
+def get_all_books(limit: int = 100) -> List[Dict]:
     return query_books(limit=limit)
 def delete_image_record(image_id: int) -> bool:
     with get_connection() as conn:

@@ -1,5 +1,12 @@
 # CHANGELOG
 All notable changes to the 24/7 Auto Facebook Book Poster project are documented here.
+## [v2.0.0] - 2026-11-09
+### Added
+- Multi-Image Batch Upload (`web_view.py`, `web_admin.py`): Upload and auto-recognize multiple book covers at once using Gemini AI Vision with live progress tracking.
+- Weekly & On-Demand Backup (`backup.py`, `telegram_bot.py`): Automated Monday 07:00 full backup (.zip) sent to Telegram, and on-demand `/backup` and `/backup full` commands.
+- 1-Click Review Workflow: Direct inline `[✅ Duyệt]` buttons and bulk approval for scanned books.
+- Anti-Seller Filtering: Smart filtering in `group_scanner.py` to prevent flagging seller/pass-book posts as customer inquiries.
+- Windows Auto-Start: Background silent runner script `start_background.vbs` configured in Windows Startup.
 ## [v1.8.0] - 2026-11-07
 ### Added
 - Database Web Inventory Dashboard (`web_admin.py`): Built-in visual book inventory table on port 8080 (`http://localhost:8080`). Displays live book cover thumbnails, title, author, price, availability status, real-time live search filter, and instant one-click `[Đánh dấu ĐÃ BÁN]` button.
@@ -58,4 +65,3 @@ All notable changes to the 24/7 Auto Facebook Book Poster project are documented
 - Post filter: Mathematical Unicode bold normalizer (NFKC), 7-30 day age window, and blacklist exclusion keywords ("Truyện tranh", "Sách tham khảo", etc.).
 - Facebook Graph API publisher (`fb_poster.py`) with dry-run simulation mode.
 - Playwright page crawler (`scanner.py`) and SQLite storage (`database.py`).
-

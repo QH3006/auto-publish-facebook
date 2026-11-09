@@ -10,12 +10,10 @@ import config
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 CAPTION_PROMPT = """
 Bạn là người quản lý tiệm sách thân thiện, tinh tế và yêu sách.
-Hãy nhìn vào bức ảnh cuốn sách này và viết một đoạn status giới thiệu thật cuốn hút:
-- Độ dài: Đúng từ 3 đến 5 dòng (không viết dài dòng, không lan man).
-- Nội dung: Giới thiệu ngắn gọn tinh thần hoặc thông điệp ý nghĩa của cuốn sách trong ảnh, khơi gợi cảm hứng đọc cho bạn đọc.
-- Văn phong: Nhẹ nhàng, ấm áp, sâu lắng và tự nhiên.
-- Ở cuối có thể thêm 1-2 hashtag liên quan (ví dụ: #SachHay #GocDocSach #MoiNgayMotCuonSach).
-- YÊU CẦU QUAN TRỌNG: Chỉ xuất đúng nội dung đoạn status đó, tuyệt đối không thêm lời chào mở đầu hay câu giải thích nào khác.
+Hãy nhìn vào bức ảnh cuốn sách này và viết status giới thiệu thật ngắn gọn:
+- Độ dài: Đúng 1 dòng ngắn gọn duy nhất (1 câu tinh tế, tự nhiên, truyền cảm hứng về cuốn sách, không xuống dòng, không viết dài dòng).
+- Ở cuối dòng có thể thêm 1-2 hashtag ngắn (ví dụ: #SachHay #TiemSachCuaThuong).
+- YÊU CẦU QUAN TRỌNG: Chỉ xuất đúng duy nhất 1 dòng status đó, tuyệt đối không thêm lời chào mở đầu hay câu giải thích nào khác.
 """
 BOOK_EXTRACT_PROMPT = """
 Bạn là chuyên gia phân tích ảnh bìa sách cho tiệm sách cũ.
@@ -55,13 +53,11 @@ def get_caption_prompt() -> str:
             pass
     return f"""
 Bạn là người quản lý tiệm sách thân thiện, tinh tế và yêu sách.
-Hãy nhìn vào bức ảnh cuốn sách này và viết một đoạn status giới thiệu thật cuốn hút:
-- Độ dài: Đúng từ 3 đến 5 dòng (không viết dài dòng, không lan man).
-- Nội dung: Giới thiệu ngắn gọn tinh thần hoặc thông điệp ý nghĩa của cuốn sách trong ảnh, khơi gợi cảm hứng đọc cho bạn đọc.
-- Văn phong: Nhẹ nhàng, ấm áp, sâu lắng và tự nhiên.
-- Ở cuối có thể thêm 1-2 hashtag liên quan (ví dụ: #SachHay #GocDocSach #MoiNgayMotCuonSach).
+Hãy nhìn vào bức ảnh cuốn sách này và viết status giới thiệu thật ngắn gọn:
+- Độ dài: Đúng 1 dòng ngắn gọn duy nhất (1 câu tinh tế, tự nhiên, truyền cảm hứng về cuốn sách, không xuống dòng, không viết dài dòng).
+- Ở cuối dòng có thể thêm 1-2 hashtag ngắn (ví dụ: #SachHay #TiemSachCuaThuong).
 {style_context}
-- YÊU CẦU QUAN TRỌNG: Chỉ xuất đúng nội dung đoạn status đó, tuyệt đối không thêm lời chào mở đầu hay câu giải thích nào khác.
+- YÊU CẦU QUAN TRỌNG: Chỉ xuất đúng duy nhất 1 dòng status đó, tuyệt đối không thêm lời chào mở đầu hay câu giải thích nào khác.
 """
 def image_to_base64(image_path: str) -> str:
     with open(image_path, "rb") as f:
@@ -238,9 +234,4 @@ def extract_buyer_inquiry_from_image(image_path: str) -> Dict[str, Any]:
             pass
     return {"titles": [], "authors": []}
 def get_fallback_caption() -> str:
-    return (
-        "Mỗi trang sách mở ra là một hành trình tĩnh lặng đưa tâm hồn ta tìm về an yên.\n"
-        "Gửi đến bạn một tựa sách hay cho những ngày cần chút khoảng lặng suy ngẫm.\n"
-        "Ghé tiệm hôm nay để chọn cho mình một người bạn đồng hành nhé!\n"
-        "#SachHay #MoiNgayMotCuonSach #Tiemsach"
-    )
+    return "Một tựa sách hay cho những ngày thảnh thơi, bạn nhắn tiệm để rước sách về nhà nhé! #SachHay #TiemSachCuaThuong"

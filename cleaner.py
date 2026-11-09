@@ -3,9 +3,14 @@ import logging
 from datetime import datetime
 import database
 import config
+import backup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 def run_cleaner():
     logging.info("Starting cleanup routine...")
+    try:
+        backup.backup_database()
+    except Exception as e:
+        logging.error(f"Daily database backup error: {e}")
     expired_images = database.get_expired_images()
     if not expired_images:
         logging.info("No expired or sold books to clean. Inventory is up to date.")

@@ -19,7 +19,7 @@ def publish_photo_to_facebook(image_path: str, caption: str, fanpage_url: str = 
             "headless": True,
             "args": ["--disable-notifications", "--disable-popup-blocking"],
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "viewport": {"width": 1280, "height": 900}
+            "viewport": {"width": 1600, "height": 900}
         }
         if config.BROWSER_CHANNEL:
             launch_kwargs["channel"] = config.BROWSER_CHANNEL
@@ -65,46 +65,66 @@ def publish_photo_to_facebook(image_path: str, caption: str, fanpage_url: str = 
                 return {"success": False, "error": err}
             composer_trigger.first.click()
             time.sleep(3)
-            dialog = page.locator("div[role='dialog']").first
+            dialog = page.locator("div[role='dialog']").filter(has_text="Tạo bài viết").first
+            if dialog.count() == 0:
+                dialog = page.locator("div[role='dialog']").filter(has_text="Create post").first
+            if dialog.count() == 0:
+                dialog = page.locator("div[role='dialog']:visible").last
             dialog.wait_for(state="visible", timeout=12000)
-            file_input = page.locator("input[type='file'][accept*='image']")
+            add_photo_btn = dialog.locator("div[aria-label='Ảnh/video'], div[role='button']:has-text('Thêm ảnh/video'), div[aria-label*='ảnh' i], div[aria-label*='photo' i]").first
+            if add_photo_btn.count() > 0:
+                logging.info("Clicking Add photo button in composer dialog...")
+                add_photo_btn.click()
+                time.sleep(2)
+            file_input = dialog.locator("input[type='file']")
             if file_input.count() == 0:
-                photo_btn = dialog.locator("div[aria-label*='Ảnh/video'], div[aria-label*='Photo/video'], [role='button']:has-text('Ảnh/video'), [role='button']:has-text('Photo/video')")
-                if photo_btn.count() > 0:
-                    photo_btn.first.click()
-                    time.sleep(2)
-                file_input = page.locator("input[type='file'][accept*='image']")
+                file_input = page.locator("div[role='dialog'] input[type='file']")
+            if file_input.count() == 0:
+                file_input = page.locator("input[type='file']")
             if file_input.count() > 0:
-                file_input.first.set_input_files(image_path)
-                logging.info(f"Uploaded photo file: {os.path.basename(image_path)}")
-                time.sleep(4)
+                try:
+                    file_input.first.set_input_files(image_path)
+                    logging.info(f"Uploaded photo to composer dialog: {os.path.basename(image_path)}")
+                    time.sleep(5)
+                except Exception as e:
+                    logging.warning(f"Set input files warning: {e}")
             else:
                 logging.warning("Photo upload input not detected, continuing with text only...")
             textbox = dialog.locator("div[role='textbox'], div[contenteditable='true']")
             if textbox.count() > 0:
                 textbox.first.click()
-                textbox.first.fill(caption)
-                time.sleep(2)
-            next_btn = dialog.locator("[role='button']:has-text('Tiếp'), [role='button']:has-text('Next')")
-            if next_btn.count() > 0:
-                logging.info("Clicking Next/Tiep step...")
-                next_btn.first.click()
-                time.sleep(4)
-            # Step: Click the final Publish button
-            # Note: Avoid loose :has-text('Đăng') as it matches "Lựa chọn lịch đăng" row!
-            post_btn = dialog.locator("div[aria-label='Đăng'], div[aria-label='Post'], div[role='button'] span:text-is('Đăng'), div[role='button'] span:text-is('Post')")
-            if post_btn.count() == 0:
-                post_btn = dialog.locator("div[role='button']:has-text('Đăng'):not(:has-text('Lựa chọn'))")
-            try:
-                post_btn.first.wait_for(state="visible", timeout=12000)
-            except Exception:
-                time.sleep(3)
-            if post_btn.count() > 0:
-                post_btn.first.click()
-                logging.info("Clicked real 'Đăng' button. Waiting for dialog to close and post to publish...")
+                time.sleep(1)
                 try:
-                    dialog.wait_for(state="detached", timeout=25000)
+                    page.keyboard.insert_text(caption)
                 except Exception:
+                    textbox.first.fill(caption)
+                time.sleep(2)
+            next_btn = dialog.locator("div[role='button']:has-text('Tiếp'), div[aria-label*='Tiếp'], div[role='button']:has-text('Next')")
+            if next_btn.count() > 0 and next_btn.first.is_visible():
+                try:
+                    next_btn.first.wait_for(state="visible", timeout=6000)
+                    logging.info("Clicking Next/Tiep step...")
+                    next_btn.first.click()
+                    time.sleep(4)
+                except Exception as ex_next:
+                    logging.warning(f"Next button click warning: {ex_next}")
+            step2_dialog = page.locator("div[role='dialog']").first
+            post_btn = step2_dialog.locator("div[role='button']:has-text('Đăng'), div[aria-label='Đăng'], div[aria-label='Post'], div[role='button']:has-text('Post')").last
+            if post_btn.count() == 0:
+                post_btn = page.locator("div[role='dialog'] div[role='button']:has-text('Đăng'), div[role='dialog'] div[aria-label='Đăng']").last
+            if post_btn.count() == 0:
+                post_btn = page.locator("div[aria-label='Đăng'], div[aria-label='Post']").last
+            if post_btn.count() > 0:
+                post_btn.click()
+                logging.info("Clicked real 'Đăng' button. Waiting for dialog to detach and publish...")
+                closed = False
+                for _ in range(60):
+                    time.sleep(1)
+                    if page.locator("div[role='dialog']").count() == 0:
+                        closed = True
+                        break
+                if not closed:
+                    logging.warning("Dialog did not close within 60s, waiting 8s extra...")
                     time.sleep(8)
                 logging.info(f"[OK] Successfully posted book to Fanpage: {target_page}")
                 context.close()

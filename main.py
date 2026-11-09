@@ -8,6 +8,7 @@ import config
 import database
 import text_utils
 import cleaner
+import backup
 import ai_engine
 import fb_poster
 import scanner
@@ -114,6 +115,7 @@ def run_scheduler_loop():
     logging.info(f"AI Provider: {config.AI_PROVIDER.upper()}")
     logging.info(f"Daily posting schedule: {', '.join(config.POSTING_HOURS)}")
     logging.info(f"Scan schedule: {config.SCAN_SCHEDULE_HOUR} | Cleanup schedule: {config.CLEANUP_SCHEDULE_HOUR}")
+    logging.info(f"Weekly Backup schedule: Monday at {config.WEEKLY_BACKUP_HOUR} to Telegram")
     if config.MONITORED_GROUP_URLS:
         logging.info(f"Group Lead Scanner active across {len(config.MONITORED_GROUP_URLS)} group(s).")
     if config.TELEGRAM_BOT_TOKEN:
@@ -124,8 +126,11 @@ def run_scheduler_loop():
     last_posted_minute = ""
     last_scanned_day = ""
     last_cleaned_day = ""
+    last_weekly_backup_day = ""
     last_group_posted_day = ""
     last_lead_scan_time = 0
+    last_heartbeat_time = 0
+    logging.info("Hệ thống đã sẵn sàng và đang ở chế độ CHỜ TRỰC CHIẾN 24/7 (Standby)...")
     while True:
         try:
             now = datetime.now()
@@ -148,12 +153,31 @@ def run_scheduler_loop():
                 logging.info(f"SCHEDULE TRIGGER: Starting cleanup for sold books ({current_time_str})...")
                 cleaner.run_cleaner()
                 last_cleaned_day = current_day_str
+            if now.weekday() == 0 and current_time_str == config.WEEKLY_BACKUP_HOUR and current_day_str != last_weekly_backup_day:
+                logging.info(f"SCHEDULE TRIGGER: Starting weekly full backup to Telegram ({current_time_str} Monday)...")
+                backup.send_weekly_backup_to_telegram()
+                last_weekly_backup_day = current_day_str
             if config.MONITORED_GROUP_URLS:
                 interval_secs = config.LEAD_SCAN_INTERVAL_MINUTES * 60
-                if (current_epoch - last_lead_scan_time) >= interval_secs:
-                    logging.info("SCHEDULE TRIGGER: Scanning Facebook Groups for buyer inquiries...")
-                    group_scanner.scan_facebook_groups(max_days=2, deep_scan=False)
-                    last_lead_scan_time = current_epoch
+                is_quiet = (now.hour >= config.LEAD_SCAN_QUIET_START_HOUR or now.hour < config.LEAD_SCAN_QUIET_END_HOUR)
+                if is_quiet:
+                    if (current_epoch - last_lead_scan_time) >= interval_secs:
+                        logging.info(f"[NGHỈ ĐÊM 22h-06h] Hiện tại là {current_time_str}, tạm dừng quét nhóm để tiết kiệm tài nguyên. Sẽ quét lại lúc 06:00 sáng.")
+                        last_lead_scan_time = current_epoch
+                else:
+                    if (current_epoch - last_lead_scan_time) >= interval_secs:
+                        logging.info("SCHEDULE TRIGGER: Scanning Facebook Groups for buyer inquiries...")
+                        group_scanner.scan_facebook_groups(max_days=2, deep_scan=False)
+                        last_lead_scan_time = current_epoch
+                        logging.info("-> Hoàn tất lượt quét nhóm. Đã quay lại trạng thái CHỜ...")
+            if (current_epoch - last_heartbeat_time) >= 180:
+                is_quiet = (now.hour >= config.LEAD_SCAN_QUIET_START_HOUR or now.hour < config.LEAD_SCAN_QUIET_END_HOUR)
+                if is_quiet:
+                    logging.info(f"[CHẾ ĐỘ NGHỈ ĐÊM] Lúc {now.strftime('%H:%M:%S')} | Web Admin: OK | Tạm dừng quét nhóm đêm (22h00 - 05h59) | Cữ đăng bài Fanpage sáng: {config.POSTING_HOURS[0]}")
+                else:
+                    next_mins = max(0, int(((last_lead_scan_time + (config.LEAD_SCAN_INTERVAL_MINUTES * 60)) - current_epoch) / 60))
+                    logging.info(f"[CHẾ ĐỘ CHỜ 24/7] Bot đang hoạt động ngầm lúc {now.strftime('%H:%M:%S')} | Quét nhóm tiếp sau: ~{next_mins}p | Cữ đăng Fanpage: {', '.join(config.POSTING_HOURS)}")
+                last_heartbeat_time = current_epoch
             time.sleep(20)
         except KeyboardInterrupt:
             logging.info("Stopped by user (Ctrl+C).")
@@ -169,6 +193,7 @@ def main():
     parser.add_argument("--post-group-now", action="store_true", help="Immediately test posting 1 image to Facebook Group")
     parser.add_argument("--scan-now", action="store_true", help="Immediately scan target Facebook Page")
     parser.add_argument("--clean-now", action="store_true", help="Clean sold-out expired books")
+    parser.add_argument("--backup-now", action="store_true", help="Immediately create full backup and send to Telegram")
     parser.add_argument("--search", type=str, help="Search available books in inventory by keyword")
     parser.add_argument("--sold", type=int, help="Mark book ID as sold out (e.g., --sold 5)")
     parser.add_argument("--available", type=int, help="Restore book ID as available (e.g., --available 5)")
@@ -189,6 +214,8 @@ def main():
         scanner.run_scanner()
     elif args.clean_now:
         cleaner.run_cleaner()
+    elif args.backup_now:
+        backup.send_weekly_backup_to_telegram()
     elif args.search:
         search_inventory(args.search)
     elif args.sold:

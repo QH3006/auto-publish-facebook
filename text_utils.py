@@ -47,7 +47,8 @@ def extract_category_from_post(post_text: str) -> str:
         if any(kw in l_lower for kw in skip_keywords):
             continue
         if 2 <= len(line) <= 50 and not line.startswith("#"):
-            return line.strip()
+            cleaned_cat = re.sub(r"\s+(ạ|nha|nhé|nè|ạ\.*|\.+)$", "", line, flags=re.IGNORECASE).strip()
+            return cleaned_cat
     return ""
 def check_post_eligibility(post_text: str) -> Tuple[bool, str]:
     if not post_text:

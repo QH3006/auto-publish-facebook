@@ -62,6 +62,13 @@ def download_and_save_book_theater(image_url: str, post_id: str, post_date_str: 
             except Exception:
                 pass
             return None
+        if price_str and database.is_duplicate_book(book_title, price_str):
+            logging.info(f"-> [TRÙNG LẶP] Sách '{book_title}' cùng giá {price_str}đ đã có trong kho. Tự động bỏ qua.")
+            try:
+                os.remove(local_path)
+            except Exception:
+                pass
+            return None
         saved = database.save_image(
             post_id=post_id,
             image_url=image_url,
@@ -83,7 +90,7 @@ def download_and_save_book_theater(image_url: str, post_id: str, post_date_str: 
     except Exception as e:
         logging.error(f"Lỗi khi xử lý ảnh sách {image_url}: {e}")
         return None
-def run_scanner(page_url: Optional[str] = None, min_days: Optional[int] = None, max_days: Optional[int] = None, scrolls: int = 60) -> int:
+def run_scanner(page_url: Optional[str] = None, min_days: Optional[int] = None, max_days: Optional[int] = None, scrolls: int = 10) -> int:
     target_url = page_url or config.TARGET_PAGE_URL
     scan_min_days = min_days if min_days is not None else config.MIN_DAYS_OLD
     scan_max_days = max_days if max_days is not None else config.MAX_DAYS_OLD
@@ -170,9 +177,20 @@ def run_scanner(page_url: Optional[str] = None, min_days: Optional[int] = None, 
                         processed_cards.add(card_text)
                         raw_date_str = it.get("dateText", "")
                         post_date_str = text_utils.parse_vietnamese_date(raw_date_str)
+                        try:
+                            p_date = datetime.strptime(post_date_str, "%Y-%m-%d").date()
+                            age_days = (date.today() - p_date).days
+                            if age_days > scan_max_days:
+                                logging.info(f"-> [BỎ QUA] Bài ngày {post_date_str} ({age_days} ngày trước) vượt quá mốc {scan_max_days} ngày.")
+                                continue
+                        except Exception:
+                            pass
                         header_snippet = card_text.split('\n')[0][:50]
-                        logging.info(f"[TÌM THẤY BÀI HỢP LỆ]: {header_snippet}... (Ngày: {post_date_str})")
                         post_id = f"fb_post_{hashlib.md5((post_date_str + '_' + card_text).encode('utf-8')).hexdigest()[:12]}"
+                        if database.is_post_saved(post_id):
+                            logging.info(f"-> [BÀI ĐÃ LƯU] Bài ngày {post_date_str} ({post_id}) đã có trong kho, bỏ qua.")
+                            continue
+                        logging.info(f"[TÌM THẤY BÀI MỚI HỢP LỆ]: {header_snippet}... (Ngày: {post_date_str})")
                         post_category = text_utils.extract_category_from_post(card_text)
                         database.save_post(post_id, target_url, card_text, post_date_str)
                         photo_href = it.get("photoHref", "")

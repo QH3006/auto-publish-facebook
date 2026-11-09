@@ -19,6 +19,15 @@ def is_seller_post(text: str) -> bool:
     for kw in getattr(config, 'SELLER_EXCLUDE_KEYWORDS', []):
         if kw.lower() in norm:
             return True
+    if any(p in norm for p in ["pass lại cho", "mình pass lại", "em pass lại", "cần pass lại", "muốn pass lại", "pass lại giá", "pass lại rẻ", "pass lại một số", "pass lại mấy", "pass bớt", "cần pass", "muốn pass"]):
+        return True
+    if "pass lại" in norm and not any(b in norm for b in ["ai pass lại", "tìm pass lại", "hóng pass lại", "xin pass lại", "bác nào pass lại", "bạn nào pass lại", "ai có pass lại"]):
+        return True
+    if any(a in norm for a in ["bạn nào cần", "ai cần", "bác nào cần", "ai quan tâm", "bác nào quan tâm", "bạn nào quan tâm", "ai thích"]):
+        return True
+    if any(c in norm for c in ["nhắn mình", "ib mình", "inbox mình", "liên hệ mình", "nhắn em", "ib em", "inbox em", "liên hệ em", "nhắn tin mình"]):
+        if not any(b in norm for b in ["ai có", "bạn nào có", "bác nào có", "có ai có", "ai còn"]):
+            return True
     return False
 def has_buyer_intent(text: str) -> bool:
     if not text or is_seller_post(text):
@@ -79,10 +88,14 @@ def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
                             let dateText = '';
                             let imgs = [];
                             let level = 0;
-                            while (p && p !== feed && level < 15) {
+                            while (p && p !== document.body && level < 25) {
                                 if (!postLink) {
-                                    let a = p.querySelector("a[href*='/posts/'], a[href*='/permalink/'], a[href*='story_fbid']");
-                                    if (a) postLink = a.href;
+                                    if (p.tagName === 'A' && (p.href.includes('/posts/') || p.href.includes('/permalink/') || p.href.includes('story_fbid') || p.href.includes('multi_permalinks'))) {
+                                        postLink = p.href.split('?')[0];
+                                    } else {
+                                        let a = p.querySelector("a[href*='/posts/'], a[href*='/permalink/'], a[href*='story_fbid'], a[href*='multi_permalinks']");
+                                        if (a && a.href) postLink = a.href.split('?')[0];
+                                    }
                                 }
                                 if (!dateText) {
                                     let links = p.querySelectorAll('a span, span');

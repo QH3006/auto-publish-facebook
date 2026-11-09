@@ -5,17 +5,43 @@ import time
 import socket
 import logging
 import ipaddress
+import threading
+import subprocess
 import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from datetime import datetime
 import psutil
+import hashlib
+import ai_engine
 import config
 import database
 import settings_manager
 from web_view import get_admin_html
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 START_TIME = time.time()
+CACHED_GPU = {"name": "Đang nhận diện...", "percent": 0.0}
+def _update_gpu_loop():
+    global CACHED_GPU
+    try:
+        cmd = ['powershell', '-NoProfile', '-Command', 'Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name']
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        names = [n.strip() for n in res.stdout.splitlines() if n.strip()]
+        if names:
+            CACHED_GPU["name"] = names[0]
+    except Exception:
+        CACHED_GPU["name"] = "Không khả dụng"
+    while True:
+        try:
+            ps_cmd = "(Get-Counter '\\GPU Engine(*engtype_3D)\\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Sum | Select-Object -ExpandProperty Sum"
+            res = subprocess.run(['powershell', '-NoProfile', '-Command', ps_cmd], capture_output=True, text=True, timeout=5)
+            raw = res.stdout.strip()
+            if raw:
+                CACHED_GPU["percent"] = min(round(float(raw), 1), 100.0)
+        except Exception:
+            pass
+        time.sleep(10)
+threading.Thread(target=_update_gpu_loop, daemon=True).start()
 def get_local_ip() -> str:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -37,6 +63,7 @@ def is_local_network(ip_str: str) -> bool:
 def get_system_metrics() -> dict:
     mem = psutil.virtual_memory()
     cpu = psutil.cpu_percent(interval=0.1)
+    disk = psutil.disk_usage('.')
     uptime_sec = int(time.time() - START_TIME)
     h, rem = divmod(uptime_sec, 3600)
     m, s = divmod(rem, 60)
@@ -46,6 +73,12 @@ def get_system_metrics() -> dict:
         "ram_used_gb": round(mem.used / (1024 ** 3), 2),
         "ram_total_gb": round(mem.total / (1024 ** 3), 2),
         "ram_percent": mem.percent,
+        "disk_used_gb": round(disk.used / (1024 ** 3), 1),
+        "disk_total_gb": round(disk.total / (1024 ** 3), 1),
+        "disk_free_gb": round(disk.free / (1024 ** 3), 1),
+        "disk_percent": disk.percent,
+        "gpu_name": CACHED_GPU.get("name", "N/A"),
+        "gpu_percent": CACHED_GPU.get("percent", 0.0),
         "uptime": f"{h}h {m}m {s}s",
         "stats": stats
     }
@@ -128,11 +161,50 @@ class AdminRequestHandler(BaseHTTPRequestHandler):
             category = payload.get("category", "").strip()
             price = str(payload.get("price", "")).strip()
             status = payload.get("status", "available")
+            img_b64 = payload.get("image_base64", "")
+            auto_analyze = payload.get("auto_analyze", False)
+            local_path = ""
+            if img_b64:
+                try:
+                    if "," in img_b64: img_b64 = img_b64.split(",", 1)[1]
+                    import base64
+                    raw_bytes = base64.b64decode(img_b64)
+                    fname = f"manual_{int(time.time()*1000)}_{hashlib.md5(raw_bytes).hexdigest()[:8]}.jpg"
+                    p = config.IMAGES_DIR / fname
+                    with open(p, "wb") as f: f.write(raw_bytes)
+                    local_path = str(p)
+                except Exception: pass
+            if auto_analyze and local_path:
+                try:
+                    info = ai_engine.extract_book_info(local_path)
+                    if not title: title = info.get("title", "")
+                    if not author: author = info.get("author", "")
+                    if not category: category = info.get("category", "")
+                    if not price: price = info.get("price", "")
+                except Exception: pass
             if not title:
-                self._send_json({"success": False, "error": "Thiếu tựa sách"}, 400)
+                title = "Sách chưa đặt tên"
+            is_rev = 0 if auto_analyze else 1
+            new_id = database.add_book_manually(title, author, category, price, status, local_path=local_path, is_reviewed=is_rev)
+            self._send_json({"success": True, "id": new_id, "title": title, "author": author, "category": category, "price": price})
+        elif path == '/api/analyze-cover':
+            img_b64 = payload.get("image_base64", "")
+            if not img_b64:
+                self._send_json({"success": False, "error": "Thiếu dữ liệu ảnh"}, 400)
                 return
-            new_id = database.add_book_manually(title, author, category, price, status, is_reviewed=1)
-            self._send_json({"success": True, "id": new_id})
+            try:
+                if "," in img_b64: img_b64 = img_b64.split(",", 1)[1]
+                import base64
+                raw_bytes = base64.b64decode(img_b64)
+                temp_path = config.STORAGE_DIR / f"temp_analyze_{int(time.time()*1000)}.jpg"
+                with open(temp_path, "wb") as f: f.write(raw_bytes)
+                info = ai_engine.extract_book_info(str(temp_path))
+                if os.path.exists(temp_path):
+                    try: os.remove(temp_path)
+                    except Exception: pass
+                self._send_json({"success": True, "title": info.get("title", ""), "author": info.get("author", ""), "category": info.get("category", ""), "price": info.get("price", "")})
+            except Exception as e:
+                self._send_json({"success": False, "error": str(e)}, 500)
         elif path == '/api/update-book':
             book_id = payload.get("id")
             title = payload.get("title", "").strip()
@@ -201,8 +273,12 @@ class AdminRequestHandler(BaseHTTPRequestHandler):
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 def start_server(port: int = 8080):
-    server_address = ('0.0.0.0', port)
-    httpd = ThreadedHTTPServer(server_address, AdminRequestHandler)
+    try:
+        server_address = ('0.0.0.0', port)
+        httpd = ThreadedHTTPServer(server_address, AdminRequestHandler)
+    except OSError as e:
+        logging.warning(f"[WEB ADMIN] Cổng {port} đang được tiến trình khác sử dụng ({e}), bỏ qua khởi chạy trùng.")
+        return
     local_ip = get_local_ip()
     logging.info(f"[WEB ADMIN] Đang chạy tại: http://{local_ip}:{port} (RAM tiêu thụ ~10MB)")
     try:

@@ -20,6 +20,7 @@ TARGET_PAGE_URL = "https://www.facebook.com/tiemsachcuathuong/"
 POSTING_HOURS = ["06:00", "11:00", "19:00"]
 SCAN_SCHEDULE_HOUR = "04:30"
 CLEANUP_SCHEDULE_HOUR = "00:30"
+WEEKLY_BACKUP_HOUR = os.getenv("WEEKLY_BACKUP_HOUR", "07:00")
 # 3. POST FILTER RULES
 REQUIRED_START_PHRASE = "HÔM NAY TIỆM CÓ GÌ?"
 REQUIRED_SECOND_PHRASE = "CÓ THẬT NHIỀU SÁCH HAY"
@@ -58,26 +59,33 @@ MONITORED_GROUP_URLS = [
     "https://www.facebook.com/groups/477952032340642/",
     "https://www.facebook.com/groups/3440463649349254/",
     "https://www.facebook.com/groups/703844251801628/",
+    "https://www.facebook.com/groups/1374822839964696/",
 ]
 BUYER_INTENT_KEYWORDS = [
-    "tìm mua", "cần mua", "hỏi mua", "mua lại", "tìm sách", "cần tìm", "cần sách",
+    "tìm mua", "cần mua", "hỏi mua", "mua lại", "tìm sách", "cần tìm",
+    "mình cần sách", "em cần sách", "đang cần sách", "cần mua sách", "cần tìm sách",
     "tìm cuốn", "tìm quyển", "tìm bộ", "tìm tập", "ai có cuốn", "ai có quyển", "ai có sách",
     "ai có bộ", "ai pass", "ai pass lại", "xin pass", "hóng pass", "tìm pass", "ai bán",
     "bác nào có", "bạn nào có", "ai có không", "ai có ko", "ai có ib", "ai có inbox", "ai còn cuốn", "ai còn quyển"
 ]
 SELLER_EXCLUDE_KEYWORDS = [
     "#pass", "pass nhanh", "pass gấp", "pass all", "mình pass", "em pass", "e pass", "pass bớt",
-    "pass sách", "pass rẻ", "giá pass", "thanh lý", "xả kho", "xả tủ", "dọn nhà", "dọn kệ", "dọn tủ",
+    "pass sách", "pass rẻ", "giá pass", "thanh lý", "xả kho", "xả tủ", "dọn nhà", "dọn kệ", "dọn tủ", "dọn phòng",
     "lấy all", "lấy cả", "lấy hết", "nhận all ptgd", "ptgd", "ship cod", "ck full", "bank full",
-    "giá trên ảnh", "giá trong ảnh", "giá như hình", "đồng giá"
+    "giá trên ảnh", "giá trong ảnh", "giá như hình", "đồng giá", "pass lại cho", "mình pass lại", "em pass lại",
+    "cần pass lại", "muốn pass lại", "pass lại giá", "pass lại rẻ", "bạn nào cần", "ai cần ib", "ai cần nhắn",
+    "inbox mình", "nhắn mình", "ib mình", "xả sách", "chủ mới", "tìm chủ mới", "tìm chủ"
 ]
 LEAD_SCAN_INTERVAL_MINUTES = 120
+LEAD_SCAN_QUIET_START_HOUR = 22
+LEAD_SCAN_QUIET_END_HOUR = 6
 # 7. TELEGRAM BOT ASSISTANT (REMOTE MOBILE LOOKUP & LEAD ALERTS)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
-# 8. FACEBOOK GROUP AUTO-POSTER (EXACTLY 1 POST PER DAY)
+# 8. FACEBOOK GROUP AUTO-POSTER (1 POST PER DAY AT 18:00 WITH 10 IMAGES)
 TARGET_POST_GROUP_URLS = [
     # "https://www.facebook.com/groups/example_group",
     "https://www.facebook.com/groups/1374822839964696",
 ]
-GROUP_POSTING_HOUR = "09:30"
+GROUP_POSTING_HOUR = "18:00"
+GROUP_POST_IMAGES_COUNT = 10

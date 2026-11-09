@@ -5,6 +5,9 @@
 # Facebook session, profile, and cookies (DO NOT COMMIT)
 cookies.json
 storage/
+backups/
+*.db
+*.sqlite
 # Python cache
 __pycache__/
 *.py[cod]

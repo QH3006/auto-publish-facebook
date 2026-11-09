@@ -1,6 +1,8 @@
 import os
+import re
 import time
 import json
+import hashlib
 import logging
 import requests
 import psutil
@@ -8,6 +10,8 @@ from typing import Dict, Any, Optional
 import config
 import database
 import web_admin
+import ai_engine
+import backup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 BASE_URL = "https://api.telegram.org/bot"
 def get_api_url(method: str) -> str:
@@ -39,6 +43,17 @@ def send_photo(chat_id: str, photo_path: str, caption: str, reply_markup: Option
             return send_message(chat_id, f"{caption}\n(Không có ảnh bìa lưu trên máy)", reply_markup)
     except Exception as e:
         logging.error(f"Error sending Telegram photo: {e}")
+        return False
+def send_document(chat_id: str, doc_path: str, caption: str = "") -> bool:
+    if not config.TELEGRAM_BOT_TOKEN or not os.path.exists(doc_path):
+        return False
+    data = {"chat_id": chat_id, "caption": caption}
+    try:
+        with open(doc_path, "rb") as f:
+            resp = requests.post(get_api_url("sendDocument"), data=data, files={"document": f}, timeout=180)
+            return resp.status_code == 200
+    except Exception as e:
+        logging.error(f"Error sending Telegram document: {e}")
         return False
 def answer_callback_query(callback_query_id: str, text: str):
     try:
@@ -73,6 +88,9 @@ def notify_new_lead(lead: Dict):
     matched_source_info = f"🔍 Nguồn phát hiện: {lead.get('matched_source')}\n" if lead.get('matched_source') else ""
     price_info = f"💰 Giá trong kho tiệm: {format_price_vnd(lead.get('price'))}\n" if lead.get('price') else ""
     cat_info = f"🏷️ Thể loại: {lead.get('category')}\n" if lead.get('category') else ""
+    p_url = (lead.get('post_url') or '').strip()
+    is_direct = any(x in p_url for x in ['/posts/', '/permalink/', 'story_fbid', 'multi_permalinks'])
+    link_line = f"🔗 Link bài viết: {p_url}\n\n👉 Bấm vào link trên để mở trực tiếp bài đăng và chốt đơn với khách!" if is_direct else f"🔗 Link nhóm: {p_url}\n⚠️ (Chưa bắt được permalink bài này, bạn bấm vào link nhóm trên để xem bài mới nhé!)"
     msg = (
         f"🎯 [CÓ KHÁCH ĐANG TÌM MUA SÁCH]\n\n"
         f"📖 Sách trùng khớp: {lead.get('matched_book_title')}\n"
@@ -80,8 +98,7 @@ def notify_new_lead(lead: Dict):
         f"{price_info}"
         f"{matched_source_info}"
         f"💬 Trích đoạn: \"{lead.get('content_snippet')}\"\n"
-        f"🔗 Link Facebook: {lead.get('post_url')}\n\n"
-        f"👉 Bạn có thể bấm vào link Facebook trên để vào tư vấn hoặc chốt đơn với khách!"
+        f"{link_line}"
     )
     for cid in chat_ids:
         send_message(cid, msg)
@@ -102,7 +119,9 @@ def handle_text_message(chat_id: str, text: str):
             "- /sua <ID> <Tên sách> [| <Giá>] [| <Thể loại>] : Sửa nhanh thông tin cho sách ID.\n"
             "- /xoa <ID> : Xóa hoàn toàn sách và file ảnh khỏi kho.\n"
             "- /status hoặc /kho : Xem thống kê số lượng sách trong kho.\n"
-            "- /system hoặc /sys : Xem tài nguyên CPU, RAM máy chủ."
+            "- /backup hoặc /saoluu : Tải bản sao lưu database kho sách về Telegram.\n"
+            "- /backup full : Nén toàn bộ database + ảnh bìa (.zip) tải về Telegram.\n"
+            "- /system hoặc /sys : Xem tài nguyên CPU, RAM, Ổ cứng, GPU máy chủ."
         )
         send_message(chat_id, msg)
         return
@@ -215,9 +234,11 @@ def handle_text_message(chat_id: str, text: str):
     if t in ["/system", "/sys"]:
         metrics = web_admin.get_system_metrics()
         msg = (
-            f"[TÀI NGUYÊN MÁY CHỦ]\n\n"
+            f"🖥️ [TÀI NGUYÊN MÁY CHỦ]\n\n"
             f"* CPU: {metrics['cpu_percent']}%\n"
             f"* RAM: {metrics['ram_used_gb']} / {metrics['ram_total_gb']} GB ({metrics['ram_percent']}%)\n"
+            f"* Ổ cứng: {metrics.get('disk_used_gb', 0)} / {metrics.get('disk_total_gb', 0)} GB ({metrics.get('disk_percent', 0)}%)\n"
+            f"* GPU: {metrics.get('gpu_name', 'N/A')} ({metrics.get('gpu_percent', 0)}%)\n"
             f"* Thời gian chạy: {metrics['uptime']}\n"
             f"* Kho sách: {metrics['stats']['available_in_stock']} còn / {metrics['stats']['sold_out']} đã bán"
         )
@@ -233,6 +254,29 @@ def handle_text_message(chat_id: str, text: str):
             f"* Khách chờ phản hồi: {stats['pending_leads']}"
         )
         send_message(chat_id, msg)
+        return
+    if t in ["/backup", "/saoluu"]:
+        send_message(chat_id, "⏳ Đang tạo bản sao lưu cơ sở dữ liệu kho sách...")
+        db_path = backup.backup_database()
+        if db_path and os.path.exists(db_path):
+            cap = f"📦 Bản sao lưu kho sách ({time.strftime('%H:%M:%S %d/%m/%Y')})\nLưu trữ: {os.path.basename(db_path)}"
+            if not send_document(chat_id, db_path, caption=cap):
+                send_message(chat_id, f"✅ Đã sao lưu tại: {db_path}")
+        else:
+            send_message(chat_id, "❌ Lỗi khi tạo bản sao lưu cơ sở dữ liệu.")
+        return
+    if t in ["/backup full", "/saoluu full"]:
+        send_message(chat_id, "⏳ Đang nén toàn bộ kho sách (gồm tất cả ảnh bìa)...")
+        zip_path = backup.create_full_backup_zip()
+        if zip_path and os.path.exists(zip_path):
+            mb = os.path.getsize(zip_path) / (1024 * 1024)
+            cap = f"📦 Gói sao lưu toàn bộ: {mb:.1f} MB"
+            if mb < 49:
+                send_document(chat_id, zip_path, caption=cap)
+            else:
+                send_message(chat_id, f"✅ Đã tạo gói sao lưu: {zip_path} ({mb:.1f} MB)")
+        else:
+            send_message(chat_id, "❌ Lỗi khi nén bản sao lưu toàn bộ.")
         return
     if t.startswith("/theloai "):
         cat_query = t[9:].strip()
@@ -345,6 +389,58 @@ def handle_callback_query(cq: Dict):
                 answer_callback_query(cq_id, f"Không tìm thấy sách #{book_id}.")
         except Exception as e:
             answer_callback_query(cq_id, f"Lỗi: {e}")
+def handle_photo_message(chat_id: str, photos: list, caption_text: str = ""):
+    if not photos or not config.TELEGRAM_BOT_TOKEN:
+        return
+    best_photo = photos[-1]
+    file_id = best_photo.get("file_id")
+    if not file_id:
+        return
+    send_message(chat_id, "⏳ Đang tải ảnh và gọi Gemini AI đọc bìa sách...")
+    try:
+        res = requests.get(get_api_url("getFile"), params={"file_id": file_id}, timeout=20).json()
+        if not res.get("ok"):
+            send_message(chat_id, "❌ Không thể lấy file ảnh từ Telegram.")
+            return
+        file_path = res["result"]["file_path"]
+        download_url = f"https://api.telegram.org/file/bot{config.TELEGRAM_BOT_TOKEN}/{file_path}"
+        img_resp = requests.get(download_url, timeout=30)
+        if img_resp.status_code != 200 or not img_resp.content:
+            send_message(chat_id, "❌ Lỗi khi tải ảnh từ máy chủ Telegram.")
+            return
+        fname = f"manual_tg_{int(time.time())}_{hashlib.md5(img_resp.content).hexdigest()[:8]}.jpg"
+        save_path = str(config.IMAGES_DIR / fname)
+        with open(save_path, "wb") as f:
+            f.write(img_resp.content)
+        info = ai_engine.extract_book_info(save_path)
+        title = info.get("title", "").strip() or "Sách chưa rõ tựa"
+        author = info.get("author", "").strip()
+        category = info.get("category", "").strip() or "Khác"
+        price_val = ""
+        if caption_text:
+            m = re.search(r"(\d{1,4}(?:[.,]\d{3})?)\s*(k|đ|vnd)?", caption_text, re.IGNORECASE)
+            if m:
+                num = int(m.group(1).replace(".", "").replace(",", ""))
+                if m.group(2) == "k" or num < 1000: num *= 1000
+                price_val = str(num)
+        if not price_val:
+            price_val = info.get("price", "")
+        new_id = database.add_book_manually(title, author, category, price_val, status="available", local_path=save_path, is_reviewed=1)
+        disp_price = format_price_vnd(price_val)
+        reply = (
+            f"✅ [ĐÃ THÊM SÁCH VÀO KHO #{new_id}]\n\n"
+            f"📖 Tên: {title}\n"
+            f"✍️ Tác giả: {author or 'Chưa rõ'}\n"
+            f"🏷️ Thể loại: {category}\n"
+            f"💰 Giá bán: {disp_price}\n\n"
+            f"👉 Để sửa lại thông tin cuốn này, bạn chỉ cần gõ:\n"
+            f"/sua {new_id} <Tên mới> | <Giá> | <Thể loại>"
+        )
+        markup = {"inline_keyboard": [[{"text": f"❌ Đã bán (#{new_id})", "callback_data": f"sold_{new_id}"}, {"text": f"🗑️ Xóa (#{new_id})", "callback_data": f"delete_{new_id}"}]]}
+        send_message(chat_id, reply, markup)
+    except Exception as e:
+        logging.error(f"Error handling Telegram photo: {e}")
+        send_message(chat_id, f"❌ Lỗi khi xử lý ảnh sách: {e}")
 def run_telegram_bot_listener():
     if not config.TELEGRAM_BOT_TOKEN:
         logging.warning("TELEGRAM_BOT_TOKEN chua duoc cau hinh trong config.py. Bo qua Telegram listener.")
@@ -360,15 +456,18 @@ def run_telegram_bot_listener():
                 data = resp.json()
                 for update in data.get("result", []):
                     offset = update["update_id"] + 1
-                    if "message" in update and "text" in update["message"]:
-                        msg = update["message"]
+                    msg = update.get("message")
+                    if msg:
                         chat_id = str(msg["chat"]["id"])
                         from_user_id = str(msg.get("from", {}).get("id"))
                         allowed_ids = get_allowed_chat_ids()
                         if allowed_ids and chat_id not in allowed_ids and from_user_id not in allowed_ids:
                             send_message(chat_id, "Xin lỗi, bạn không có quyền truy cập kho sách này.")
                             continue
-                        handle_text_message(chat_id, msg["text"])
+                        if "text" in msg:
+                            handle_text_message(chat_id, msg["text"])
+                        elif "photo" in msg:
+                            handle_photo_message(chat_id, msg["photo"], msg.get("caption", ""))
                     elif "callback_query" in update:
                         handle_callback_query(update["callback_query"])
             time.sleep(1)
