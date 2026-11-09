@@ -57,7 +57,7 @@ def is_local_network(ip_str: str) -> bool:
         return True
     try:
         ip = ipaddress.ip_address(ip_str)
-        return ip.is_private or ip.is_loopback
+        return ip.is_private or ip.is_loopback or (ip in ipaddress.ip_network('100.64.0.0/10'))
     except Exception:
         return False
 def get_system_metrics() -> dict:
