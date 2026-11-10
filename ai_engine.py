@@ -67,21 +67,24 @@ def _call_gemini_vision(image_path: str, prompt: str) -> Optional[str]:
     if not api_key:
         return None
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(config.GEMINI_MODEL)
-        img = Image.open(image_path)
-        response = model.generate_content([prompt, img])
-        return response.text.strip()
-    except Exception as e:
-        if "429" in str(e):
-            logging.warning("[Gemini Vision] Đạt giới hạn 15 req/phút, tự động chờ 12s để thử lại...")
+        b64_img = image_to_base64(image_path)
+        ext = os.path.splitext(image_path)[1].lower()
+        mime = "image/png" if ext == ".png" else "image/jpeg"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
+        headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+        payload = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime, "data": b64_img}}]}]}
+        resp = requests.post(url, headers=headers, json=payload, timeout=45)
+        if resp.status_code == 200:
+            return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        if resp.status_code == 429:
+            logging.warning("[Gemini Vision] Đạt giới hạn req/phút, tự động chờ 12s để thử lại...")
             time.sleep(12)
-            try:
-                response = model.generate_content([prompt, img])
-                return response.text.strip()
-            except Exception:
-                pass
+            resp2 = requests.post(url, headers=headers, json=payload, timeout=45)
+            if resp2.status_code == 200:
+                return resp2.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        logging.error(f"[Gemini Vision] Error {resp.status_code}: {resp.text[:250]}")
+        return None
+    except Exception as e:
         logging.error(f"[Gemini Vision] Error: {e}")
         return None
 def _call_openai_compatible(messages: list, model: str = None) -> Optional[str]:

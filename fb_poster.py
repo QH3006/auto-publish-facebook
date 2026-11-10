@@ -118,12 +118,16 @@ def publish_photo_to_facebook(image_path: str, caption: str, fanpage_url: str = 
                 except Exception as ex_next:
                     logging.warning(f"Next button click warning: {ex_next}")
             step2_dialog = page.locator("div[role='dialog']").first
-            post_btn = step2_dialog.locator("div[role='button']:has-text('Đăng'), div[aria-label='Đăng'], div[aria-label='Post'], div[role='button']:has-text('Post')").last
+            post_btn = step2_dialog.locator("div[aria-label='Đăng'], div[aria-label='Post']").last
             if post_btn.count() == 0:
-                post_btn = page.locator("div[role='dialog'] div[role='button']:has-text('Đăng'), div[role='dialog'] div[aria-label='Đăng']").last
+                post_btn = page.locator("div[role='dialog'] div[aria-label='Đăng'], div[role='dialog'] div[aria-label='Post']").last
             if post_btn.count() == 0:
-                post_btn = page.locator("div[aria-label='Đăng'], div[aria-label='Post']").last
+                post_btn = step2_dialog.locator("div[role='button']:text-is('Đăng'), div[role='button']:text-is('Post')").last
             if post_btn.count() > 0:
+                for _ in range(15):
+                    if post_btn.get_attribute("aria-disabled") != "true":
+                        break
+                    time.sleep(1)
                 post_btn.click()
                 logging.info("Clicked real 'Đăng' button. Waiting for dialog to detach and publish...")
                 closed = False
@@ -132,9 +136,29 @@ def publish_photo_to_facebook(image_path: str, caption: str, fanpage_url: str = 
                     if page.locator("div[role='dialog']").count() == 0:
                         closed = True
                         break
+                    dismiss_btn = page.locator(
+                        "div[role='dialog'] div[role='button']:has-text('Lúc khác'), "
+                        "div[role='dialog'] div[aria-label='Lúc khác'], "
+                        "div[role='dialog'] div[role='button']:has-text('Not now'), "
+                        "div[role='dialog'] div[role='button']:has-text('Not Now'), "
+                        "div[role='dialog'] div[role='button']:has-text('Bỏ qua'), "
+                        "div[role='dialog'] div[role='button']:has-text('Skip')"
+                    )
+                    if dismiss_btn.count() > 0 and dismiss_btn.first.is_visible():
+                        logging.info("Dismissing Facebook popup (WhatsApp/upsell)...")
+                        dismiss_btn.first.click()
+                        time.sleep(2)
+                        retry_post = page.locator("div[role='dialog'] div[aria-label='Đăng'], div[role='dialog'] div[aria-label='Post']")
+                        if retry_post.count() > 0 and retry_post.last.is_visible():
+                            logging.info("Clicking 'Đăng' after dismissing popup...")
+                            retry_post.last.click()
+                            time.sleep(2)
                 if not closed:
-                    logging.warning("Dialog did not close within 60s, waiting 8s extra...")
-                    time.sleep(8)
+                    page.screenshot(path=str(config.STORAGE_DIR / "fb_post_error.png"))
+                    err = "Post dialog did not close within 60s (saved debug screenshot to storage/fb_post_error.png)."
+                    logging.error(err)
+                    context.close()
+                    return {"success": False, "error": err}
                 logging.info(f"[OK] Successfully posted book to Fanpage: {target_page}")
                 context.close()
                 return {
