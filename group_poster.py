@@ -13,6 +13,13 @@ GENERAL_GROUP_CAPTIONS = [
     "Một vài đầu sách hay gửi bạn đọc, bạn nào cần thêm ảnh chi tiết cuốn nào cứ nhắn tiệm nha! #SachHay #TiemSachCuaThuong"
 ]
 def post_single_book_to_group(group_url: str = None, count: int = None) -> bool:
+    for lf in ["SingletonLock", "SingletonSocket", "SingletonCookie"]:
+        p = config.BROWSER_PROFILE_DIR / lf
+        if p.exists():
+            try:
+                os.remove(p)
+            except Exception:
+                pass
     target_groups = [group_url] if group_url else config.TARGET_POST_GROUP_URLS
     if not target_groups:
         logging.warning("No target group URLs configured in config.TARGET_POST_GROUP_URLS.")
@@ -122,14 +129,20 @@ def post_single_book_to_group(group_url: str = None, count: int = None) -> bool:
                 for img_id in ids:
                     database.mark_image_published(img_id)
                 context.close()
+                import telegram_bot
+                telegram_bot.send_alert_to_all(f"✅ [NHÓM FACEBOOK] Đã tự động đăng bài kèm {len(paths)} ảnh sách lên nhóm:\n🔗 {target_group}")
                 return True
             else:
                 logging.error("Could not find submit 'Đăng' button in group dialog.")
                 context.close()
+                import telegram_bot
+                telegram_bot.send_alert_to_all(f"⚠️ [LỖI ĐĂNG NHÓM] Không tìm thấy nút 'Đăng' bài trong nhóm:\n🔗 {target_group}")
                 return False
         except Exception as e:
             logging.error(f"Error posting to Facebook Group: {e}")
             context.close()
+            import telegram_bot
+            telegram_bot.send_alert_to_all(f"⚠️ [LỖI ĐĂNG NHÓM] Đăng bài lên nhóm Facebook thất bại: {e}")
             return False
 if __name__ == "__main__":
     post_single_book_to_group()

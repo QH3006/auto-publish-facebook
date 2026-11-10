@@ -19,14 +19,14 @@ import group_poster
 import web_admin
 import settings_manager
 import threading
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(config.STORAGE_DIR / "app.log", encoding="utf-8")
-    ]
-)
+file_handler = logging.FileHandler(config.STORAGE_DIR / "app.log", encoding="utf-8")
+stream_handler = logging.StreamHandler(sys.stdout)
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+file_handler.setFormatter(formatter)
+stream_handler.setFormatter(formatter)
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.handlers = [stream_handler, file_handler]
 def execute_single_post(min_days: int = None, max_days: int = None):
     logging.info("--- STARTING SINGLE-IMAGE POSTING SESSION ---")
     p_min = min_days if min_days is not None else config.MIN_DAYS_OLD
@@ -36,8 +36,9 @@ def execute_single_post(min_days: int = None, max_days: int = None):
         max_days=p_max
     )
     if not candidates:
-        logging.warning(f"No eligible unposted images found in storage for {p_min}-{p_max} days range.")
-        logging.info("Tip: Run scanner (python main.py --scan-now) to fetch new images.")
+        msg = f"Kho chưa có sách đủ tuổi ({p_min}-{p_max} ngày) để đăng bài Fanpage."
+        logging.warning(msg)
+        telegram_bot.send_alert_to_all(f"⚠️ [LƯU Ý CỮ ĐĂNG] {msg}")
         return False
     selected = random.choice(candidates)
     image_id = selected["id"]
@@ -51,9 +52,14 @@ def execute_single_post(min_days: int = None, max_days: int = None):
     if result.get("success"):
         database.mark_image_published(image_id)
         logging.info(f"SUCCESS: Image ID {image_id} published successfully.")
+        title_disp = selected.get('title') or 'Sách hay'
+        price_disp = f"\n💰 Giá: {telegram_bot.format_price_vnd(selected.get('price'))}" if selected.get('price') else ""
+        telegram_bot.send_alert_to_all(f"✅ [TỰ ĐỘNG ĐĂNG BÀI] Đã đăng thành công lên Fanpage!\n📖 Tựa: '{title_disp}'{price_disp}")
         return True
     else:
-        logging.error(f"Failed to publish: {result.get('error')}")
+        err_msg = result.get('error') or 'Lỗi không xác định'
+        logging.error(f"Failed to publish: {err_msg}")
+        telegram_bot.send_alert_to_all(f"⚠️ [LỖI ĐĂNG BÀI] Cữ đăng Fanpage thất bại:\nLý do: {err_msg}")
         return False
 def search_inventory(keyword: str):
     print(f"\nSearching available books matching: '{keyword}'...")
@@ -139,23 +145,23 @@ def run_scheduler_loop():
             current_epoch = time.time()
             if current_time_str in config.POSTING_HOURS and current_time_str != last_posted_minute:
                 logging.info(f"SCHEDULE TRIGGER: Posting time reached ({current_time_str})")
-                execute_single_post()
+                threading.Thread(target=execute_single_post, daemon=True).start()
                 last_posted_minute = current_time_str
             if config.TARGET_POST_GROUP_URLS and current_time_str == config.GROUP_POSTING_HOUR and current_day_str != last_group_posted_day:
                 logging.info(f"SCHEDULE TRIGGER: Daily Group posting 1 post ({current_time_str})...")
-                group_poster.post_single_book_to_group()
+                threading.Thread(target=group_poster.post_single_book_to_group, daemon=True).start()
                 last_group_posted_day = current_day_str
             if current_time_str == config.SCAN_SCHEDULE_HOUR and current_day_str != last_scanned_day:
                 logging.info(f"SCHEDULE TRIGGER: Starting daily scan ({current_time_str})...")
-                scanner.run_scanner()
+                threading.Thread(target=scanner.run_scanner, daemon=True).start()
                 last_scanned_day = current_day_str
             if current_time_str == config.CLEANUP_SCHEDULE_HOUR and current_day_str != last_cleaned_day:
                 logging.info(f"SCHEDULE TRIGGER: Starting cleanup for sold books ({current_time_str})...")
-                cleaner.run_cleaner()
+                threading.Thread(target=cleaner.run_cleaner, daemon=True).start()
                 last_cleaned_day = current_day_str
             if now.weekday() == 0 and current_time_str == config.WEEKLY_BACKUP_HOUR and current_day_str != last_weekly_backup_day:
                 logging.info(f"SCHEDULE TRIGGER: Starting weekly full backup to Telegram ({current_time_str} Monday)...")
-                backup.send_weekly_backup_to_telegram()
+                threading.Thread(target=backup.send_weekly_backup_to_telegram, daemon=True).start()
                 last_weekly_backup_day = current_day_str
             if config.MONITORED_GROUP_URLS:
                 interval_secs = config.LEAD_SCAN_INTERVAL_MINUTES * 60
@@ -167,7 +173,7 @@ def run_scheduler_loop():
                 else:
                     if (current_epoch - last_lead_scan_time) >= interval_secs:
                         logging.info("SCHEDULE TRIGGER: Scanning Facebook Groups for buyer inquiries...")
-                        group_scanner.scan_facebook_groups(max_days=2, deep_scan=False)
+                        threading.Thread(target=group_scanner.scan_facebook_groups, kwargs={"max_days": 2, "deep_scan": False}, daemon=True).start()
                         last_lead_scan_time = current_epoch
                         logging.info("-> Hoàn tất lượt quét nhóm. Đã quay lại trạng thái CHỜ...")
             if (current_epoch - last_heartbeat_time) >= 180:

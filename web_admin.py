@@ -130,7 +130,14 @@ class AdminRequestHandler(BaseHTTPRequestHandler):
             leads = database.get_leads("all")
             self._send_json(leads)
         elif path == '/api/settings':
-            self._send_json(settings_manager.get_settings())
+            self._send_json(settings_manager.get_current_settings())
+        elif path == '/api/logs':
+            log_path = config.STORAGE_DIR / 'app.log'
+            log_lines = []
+            if os.path.exists(log_path):
+                with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    log_lines = [l.strip() for l in f.readlines() if l.strip()][-50:]
+            self._send_json({"logs": log_lines})
         elif path == '/api/categories':
             self._send_json(database.get_all_categories())
         elif path.startswith('/storage/images/'):

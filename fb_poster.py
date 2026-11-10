@@ -5,7 +5,16 @@ from typing import Dict, Any
 from playwright.sync_api import sync_playwright
 import config
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+def cleanup_browser_locks():
+    for lf in ["SingletonLock", "SingletonSocket", "SingletonCookie"]:
+        p = config.BROWSER_PROFILE_DIR / lf
+        if p.exists():
+            try:
+                os.remove(p)
+            except Exception:
+                pass
 def publish_photo_to_facebook(image_path: str, caption: str, fanpage_url: str = None) -> Dict[str, Any]:
+    cleanup_browser_locks()
     target_page = fanpage_url or config.MY_FANPAGE_URL
     if not os.path.exists(image_path):
         logging.error(f"Image file to post does not exist: {image_path}")

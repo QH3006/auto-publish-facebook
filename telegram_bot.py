@@ -119,6 +119,8 @@ def handle_text_message(chat_id: str, text: str):
             "- /sua <ID> <Tên sách> [| <Giá>] [| <Thể loại>] : Sửa nhanh thông tin cho sách ID.\n"
             "- /xoa <ID> : Xóa hoàn toàn sách và file ảnh khỏi kho.\n"
             "- /status hoặc /kho : Xem thống kê số lượng sách trong kho.\n"
+            "- /post hoặc /dangbai : Đăng ngay 1 cuốn sách lên Fanpage.\n"
+            "- /log hoặc /nhatky : Xem nhật ký hoạt động mới nhất của Bot.\n"
             "- /backup hoặc /saoluu : Tải bản sao lưu database kho sách về Telegram.\n"
             "- /backup full : Nén toàn bộ database + ảnh bìa (.zip) tải về Telegram.\n"
             "- /system hoặc /sys : Xem tài nguyên CPU, RAM, Ổ cứng, GPU máy chủ."
@@ -254,6 +256,20 @@ def handle_text_message(chat_id: str, text: str):
             f"* Khách chờ phản hồi: {stats['pending_leads']}"
         )
         send_message(chat_id, msg)
+        return
+    if t in ["/log", "/nhatky", "/logs"]:
+        log_file = config.STORAGE_DIR / "app.log"
+        if os.path.exists(log_file):
+            with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                tail = [line.strip() for line in f.readlines() if line.strip()][-20:]
+            send_message(chat_id, ("📋 [NHẬT KÝ MỚI NHẤT]:\n\n" + "\n".join(tail)) if tail else "Nhật ký hiện đang trống.")
+        else:
+            send_message(chat_id, "Chưa tìm thấy file app.log trên máy chủ.")
+        return
+    if t in ["/post", "/dangbai"]:
+        send_message(chat_id, "🚀 Đang kích hoạt cữ đăng 1 cuốn sách lên Fanpage ngay lập tức...")
+        import main
+        threading.Thread(target=main.execute_single_post, daemon=True).start()
         return
     if t in ["/backup", "/saoluu"]:
         send_message(chat_id, "⏳ Đang tạo bản sao lưu cơ sở dữ liệu kho sách...")
