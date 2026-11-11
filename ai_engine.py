@@ -7,6 +7,7 @@ import requests
 from typing import Dict, Any, Optional
 from PIL import Image
 import config
+import book_lookup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 CAPTION_PROMPT = """
 Bạn là người quản lý tiệm sách thân thiện, tinh tế và yêu sách.
@@ -35,7 +36,7 @@ QUY TẮC PHÂN TÍCH QUAN TRỌNG:
    - Khi đó: "is_valid_book": false, "title": "", "author": "", "category": "".
 Chỉ xuất đúng cú pháp JSON thuần, tuyệt đối không bọc markdown hay thêm lời giải thích nào.
 """
-def get_caption_prompt() -> str:
+def build_grounded_caption_prompt(title: str = "", author: str = "", category: str = "", summary_data: Optional[Dict[str, str]] = None) -> str:
     samples_file = config.STORAGE_DIR / "style_samples.txt"
     style_context = ""
     if samples_file.exists():
@@ -43,21 +44,34 @@ def get_caption_prompt() -> str:
             with open(samples_file, "r", encoding="utf-8") as f:
                 content = f.read().strip()
                 if content:
-                    style_context = (
-                        "\n--- CÁC BÀI VIẾT MẪU VĂN PHONG THỰC TẾ CỦA TIỆM ĐỂ BẠN HỌC THEO ---\n"
-                        f"{content}\n"
-                        "--------------------------------------------------------------------\n"
-                        "Hãy viết bài giới thiệu cuốn sách trong ảnh theo đúng văn phong tự nhiên, ấm áp, cách ngắt dòng và dùng từ như các bài mẫu trên.\n"
-                    )
+                    style_context = f"\n--- VĂN PHONG THỰC TẾ CỦA TIỆM ---\n{content}\n-----------------------------------\n"
         except Exception:
             pass
+    book_meta = f"Tên sách: {title or 'Chưa rõ'} | Tác giả: {author or 'Chưa rõ'} | Thể loại: {category or 'Chưa rõ'}"
+    if summary_data and summary_data.get("summary"):
+        fact_rule = (
+            f"TÀI LIỆU NGUỒN CHUẨN TỪ [{summary_data['source']}]:\n"
+            f"\"\"\"{summary_data['summary']}\"\"\"\n"
+            "QUY TẮC BẮT BUỘC: Chỉ tóm tắt nội dung sách DỰA HOÀN TOÀN VÀO TÀI LIỆU NGUỒN CHUẨN Ở TRÊN. "
+            "TUYỆT ĐỐI KHÔNG tự bịa thêm chi tiết, nhân vật hay tình tiết không có trong tài liệu."
+        )
+    else:
+        fact_rule = (
+            "QUY TẮC BẮT BUỘC: Hãy sử dụng công cụ tìm kiếm Google để tìm thông tin thực tế về cuốn sách này (từ Tiki, Fahasa, Goodreads, NXB, Wikipedia...). "
+            "CHỈ giới thiệu dựa trên kết quả tìm được chính xác. Nếu không tìm thấy nguồn xác thực về nội dung bên trong cuốn sách, "
+            "TUYỆT ĐỐI KHÔNG ĐƯỢC TỰ BỊA NỘI DUNG — chỉ giới thiệu trung thực tên sách, tác giả, thể loại và lời mời bạn đọc ghé tiệm."
+        )
     return f"""
-Bạn là người quản lý tiệm sách thân thiện, tinh tế và yêu sách.
-Hãy nhìn vào bức ảnh cuốn sách này và viết status giới thiệu thật ngắn gọn:
-- Độ dài: Đúng 1 dòng ngắn gọn duy nhất (1 câu tinh tế, tự nhiên, truyền cảm hứng về cuốn sách, không xuống dòng, không viết dài dòng).
-- Ở cuối dòng có thể thêm 1-2 hashtag ngắn (ví dụ: #SachHay #TiemSachCuaThuong).
+Bạn là người quản lý tiệm sách cũ thân thiện, tinh tế và trung thực.
+Thông tin sách: {book_meta}
+{fact_rule}
 {style_context}
-- YÊU CẦU QUAN TRỌNG: Chỉ xuất đúng duy nhất 1 dòng status đó, tuyệt đối không thêm lời chào mở đầu hay câu giải thích nào khác.
+YÊU CẦU ĐỊNH DẠNG BÀI ĐĂNG (3 ĐẾN 5 DÒNG):
+- Độ dài: Chính xác từ 3 đến 5 dòng (ngắt dòng rõ ràng, dễ đọc trên Facebook).
+- Dòng 1: Giới thiệu tên sách và tác giả (nếu có).
+- Dòng 2-4: Tóm tắt súc tích, đúng sự thật về nội dung hoặc giá trị cốt lõi của cuốn sách theo nguồn chuẩn (tuyệt đối không phóng đại hay bịa đặt).
+- Dòng cuối: Lời nhắn nhẹ nhàng mời bạn đọc quan tâm nhắn tiệm, kèm 2-3 hashtag (#SachHay #TiemSachCuaThuong).
+- CHỈ xuất nội dung bài đăng hoàn chỉnh, không thêm lời chào hay giải thích thừa.
 """
 def image_to_base64(image_path: str) -> str:
     with open(image_path, "rb") as f:
@@ -131,29 +145,48 @@ def _call_ollama_vision(image_path: str, prompt: str) -> Optional[str]:
     except Exception as e:
         logging.error(f"[Ollama Vision] Error: {e}")
         return None
-def generate_caption_for_image(image_path: str) -> str:
+def _call_gemini_grounded(prompt: str, use_google_search: bool = False) -> Optional[str]:
+    api_key = config.GEMINI_API_KEY
+    if not api_key:
+        return None
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
+        headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+        payload: Dict[str, Any] = {"contents": [{"parts": [{"text": prompt}]}]}
+        if use_google_search:
+            payload["tools"] = [{"google_search": {}}]
+        resp = requests.post(url, headers=headers, json=payload, timeout=45)
+        if resp.status_code == 200:
+            parts = resp.json()["candidates"][0]["content"]["parts"]
+            text = "\n".join(p.get("text", "") for p in parts if p.get("text")).strip()
+            return text or None
+        logging.error(f"[Gemini Grounded] Error {resp.status_code}: {resp.text[:250]}")
+    except Exception as e:
+        logging.error(f"[Gemini Grounded] Error: {e}")
+    return None
+def generate_caption_for_image(image_path: str, book_info: Optional[Dict[str, Any]] = None) -> str:
+    title = (book_info or {}).get("title", "").strip()
+    author = (book_info or {}).get("author", "").strip()
+    category = (book_info or {}).get("category", "").strip()
+    if not title or book_lookup.norm_words(title) in book_lookup.GENERIC_TITLES:
+        extracted = extract_book_info(image_path)
+        title = title or extracted.get("title", "")
+        author = author or extracted.get("author", "")
+        category = category or extracted.get("category", "")
+    summary_data = book_lookup.lookup_verified_book_summary(title, author)
+    prompt = build_grounded_caption_prompt(title, author, category, summary_data)
     provider = config.AI_PROVIDER.lower()
     result = None
-    prompt = get_caption_prompt()
     if provider == "gemini":
-        result = _call_gemini_vision(image_path, prompt)
+        use_search = summary_data is None
+        result = _call_gemini_grounded(prompt, use_google_search=use_search)
     elif provider == "openai_compatible":
-        b64 = image_to_base64(image_path)
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-                ]
-            }
-        ]
-        result = _call_openai_compatible(messages)
+        result = _call_openai_compatible([{"role": "user", "content": prompt}])
     elif provider == "ollama":
         result = _call_ollama_vision(image_path, prompt)
     if result:
         return result
-    return get_fallback_caption()
+    return book_lookup.format_factual_post_without_ai(title, author, category, summary_data)
 def extract_book_info(image_path: str) -> Dict[str, str]:
     provider = config.AI_PROVIDER.lower()
     raw = None

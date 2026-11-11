@@ -280,6 +280,7 @@ def get_unposted_eligible_images(min_days: int = 7, max_days: int = 30) -> List[
                         "title": row["title"],
                         "author": row["author"],
                         "category": row["category"],
+                        "price": row["price"],
                         "age_days": age_days,
                         "image_url": row["image_url"]
                     })

@@ -46,7 +46,7 @@ def execute_single_post(min_days: int = None, max_days: int = None):
     age_days = selected["age_days"]
     logging.info(f"Selected image ID {image_id} (age: {age_days} days) at: {local_path}")
     logging.info(f"Generating 3-5 line intro caption using [{config.AI_PROVIDER}]...")
-    caption = ai_engine.generate_caption_for_image(local_path)
+    caption = ai_engine.generate_caption_for_image(local_path, book_info=selected)
     logging.info(f"Generated caption:\n{caption}")
     result = fb_poster.publish_photo_to_facebook(local_path, caption)
     if result.get("success"):
