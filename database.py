@@ -1,7 +1,7 @@
 import sqlite3
 import os
 import hashlib
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Dict, Optional
 import config
 def get_connection():
@@ -42,7 +42,7 @@ def init_db():
         """)
         cursor.execute("PRAGMA table_info(images)")
         cols = [c[1] for c in cursor.fetchall()]
-        for col_name, col_def in [("category", "TEXT DEFAULT ''"), ("price", "TEXT DEFAULT ''"), ("is_single_book", "INTEGER DEFAULT 1"), ("is_reviewed", "INTEGER DEFAULT 1"), ("title", "TEXT DEFAULT ''"), ("author", "TEXT DEFAULT ''"), ("status", "TEXT DEFAULT 'available'"), ("sold_at", "TEXT")]:
+        for col_name, col_def in [("category", "TEXT DEFAULT ''"), ("price", "TEXT DEFAULT ''"), ("is_single_book", "INTEGER DEFAULT 1"), ("is_reviewed", "INTEGER DEFAULT 1"), ("title", "TEXT DEFAULT ''"), ("author", "TEXT DEFAULT ''"), ("status", "TEXT DEFAULT 'available'"), ("sold_at", "TEXT"), ("last_attempted_at", "TEXT"), ("is_group_published", "INTEGER DEFAULT 0")]:
             if col_name not in cols:
                 cursor.execute(f"ALTER TABLE images ADD COLUMN {col_name} {col_def}")
         cursor.execute("""
@@ -250,16 +250,18 @@ def search_available_books(keyword: str) -> List[Dict]:
 def get_unposted_eligible_images(min_days: int = 7, max_days: int = 30) -> List[Dict]:
     today = date.today()
     results = []
+    cutoff_20h = (datetime.now() - timedelta(hours=20)).isoformat()
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT id, post_id, local_path, post_date, image_url, title, author, category, price, is_reviewed 
             FROM images 
             WHERE is_published = 0 AND status = 'available' AND (is_single_book = 1 OR is_single_book IS NULL)
+              AND (last_attempted_at IS NULL OR last_attempted_at = '' OR last_attempted_at < ?)
               AND (image_hash IS NULL OR image_hash = '' OR image_hash NOT IN (SELECT image_hash FROM images WHERE is_published = 1 AND image_hash IS NOT NULL AND image_hash != ''))
               AND (title IS NULL OR TRIM(title) = '' OR LOWER(TRIM(title)) NOT IN (SELECT LOWER(TRIM(title)) FROM images WHERE is_published = 1 AND title IS NOT NULL AND TRIM(title) != ''))
             ORDER BY is_reviewed DESC, RANDOM()
-        """)
+        """, (cutoff_20h,))
         rows = cursor.fetchall()
         for row in rows:
             post_date_str = row["post_date"]
@@ -280,6 +282,24 @@ def get_unposted_eligible_images(min_days: int = 7, max_days: int = 30) -> List[
                         "category": row["category"], "price": row["price"], "age_days": age_days, "image_url": row["image_url"]
                     })
     return results
+def mark_image_attempted(image_id: int):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        now_str = datetime.now().isoformat()
+        cursor.execute("SELECT image_hash, title FROM images WHERE id = ?", (image_id,))
+        row = cursor.fetchone()
+        cursor.execute("UPDATE images SET last_attempted_at = ? WHERE id = ?", (now_str, image_id))
+        if row and (row["image_hash"] or (row["title"] and row["title"].strip())):
+            cursor.execute(
+                "UPDATE images SET last_attempted_at = ? WHERE (image_hash IS NOT NULL AND image_hash != '' AND image_hash = ?) OR (title IS NOT NULL AND TRIM(title) != '' AND LOWER(TRIM(title)) = LOWER(TRIM(?)))",
+                (now_str, row["image_hash"] or "", row["title"] or "")
+            )
+        conn.commit()
+def mark_image_group_published(image_id: int):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE images SET is_group_published = 1 WHERE id = ?", (image_id,))
+        conn.commit()
 def mark_image_published(image_id: int):
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -395,16 +415,8 @@ def delete_image_record(image_id: int) -> bool:
         return True
 def save_lead(group_url: str, post_url: str, content_snippet: str, matched_book_id: int, matched_book_title: str) -> bool:
     with get_connection() as conn:
-        cursor = conn.cursor()
-        now_str = datetime.now().isoformat()
         try:
-            cursor.execute("""
-                INSERT INTO matched_leads (
-                    group_url, post_url, content_snippet, 
-                    matched_book_id, matched_book_title, status, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, 'pending', ?)
-            """, (group_url, post_url, content_snippet, matched_book_id, matched_book_title, now_str))
+            conn.cursor().execute("INSERT INTO matched_leads (group_url, post_url, content_snippet, matched_book_id, matched_book_title, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)", (group_url, post_url, content_snippet, matched_book_id, matched_book_title, datetime.now().isoformat()))
             conn.commit()
             return True
         except sqlite3.IntegrityError:
@@ -421,14 +433,12 @@ def get_leads(status: str = "pending") -> List[Dict]:
         return [dict(r) for r in rows]
 def update_lead_status(lead_id: int, status: str) -> bool:
     with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("UPDATE matched_leads SET status = ? WHERE id = ?", (status, lead_id))
+        conn.cursor().execute("UPDATE matched_leads SET status = ? WHERE id = ?", (status, lead_id))
         conn.commit()
         return True
 def delete_lead(lead_id: int) -> bool:
     with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM matched_leads WHERE id = ?", (lead_id,))
+        conn.cursor().execute("DELETE FROM matched_leads WHERE id = ?", (lead_id,))
         conn.commit()
         return True
 def mark_lead_done(lead_id: int):
@@ -436,27 +446,16 @@ def mark_lead_done(lead_id: int):
 def get_stats() -> Dict:
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM images")
-        total = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM images WHERE status = 'available'")
-        available = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM images WHERE status = 'sold_out'")
-        sold = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM images WHERE is_published = 1")
-        published = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM posts")
-        total_posts = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM matched_leads WHERE status = 'pending'")
-        pending_leads = cursor.fetchone()[0]
+        total = cursor.execute("SELECT COUNT(*) FROM images").fetchone()[0]
+        available = cursor.execute("SELECT COUNT(*) FROM images WHERE status = 'available'").fetchone()[0]
+        sold = cursor.execute("SELECT COUNT(*) FROM images WHERE status = 'sold_out'").fetchone()[0]
+        published = cursor.execute("SELECT COUNT(*) FROM images WHERE is_published = 1").fetchone()[0]
+        total_posts = cursor.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+        pending_leads = cursor.execute("SELECT COUNT(*) FROM matched_leads WHERE status = 'pending'").fetchone()[0]
     eligible = len(get_unposted_eligible_images(config.MIN_DAYS_OLD, config.MAX_DAYS_OLD))
     return {
-        "total_posts": total_posts,
-        "total_images": total,
-        "available_in_stock": available,
-        "sold_out": sold,
-        "published_images": published,
-        "eligible_ready_to_post": eligible,
-        "pending_leads": pending_leads
+        "total_posts": total_posts, "total_images": total, "available_in_stock": available,
+        "sold_out": sold, "published_images": published, "eligible_ready_to_post": eligible, "pending_leads": pending_leads
     }
 DEFAULT_CATEGORIES = [
     "Văn học Việt Nam", "Văn học phương Tây", "Văn học Trung Quốc", "Văn học Nhật Bản",

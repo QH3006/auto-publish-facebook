@@ -127,7 +127,7 @@ def post_single_book_to_group(group_url: str = None, count: int = None) -> bool:
                     time.sleep(8)
                 logging.info(f"[OK] Successfully posted {len(paths)} book photos to Facebook Group: {target_group}")
                 for img_id in ids:
-                    database.mark_image_published(img_id)
+                    database.mark_image_group_published(img_id)
                 context.close()
                 import telegram_bot
                 telegram_bot.send_alert_to_all(f"✅ [NHÓM FACEBOOK] Đã tự động đăng bài kèm {len(paths)} ảnh sách lên nhóm:\n🔗 {target_group}")
