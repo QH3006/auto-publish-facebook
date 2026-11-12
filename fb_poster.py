@@ -131,11 +131,17 @@ def publish_photo_to_facebook(image_path: str, caption: str, fanpage_url: str = 
                 post_btn.click()
                 logging.info("Clicked real 'Đăng' button. Waiting for dialog to detach and publish...")
                 closed = False
-                for _ in range(60):
+                for sec in range(60):
                     time.sleep(1)
-                    if page.locator("div[role='dialog']").count() == 0:
+                    if page.locator("div[role='dialog']:visible").count() == 0:
                         closed = True
                         break
+                    if sec >= 5:
+                        has_editor = page.locator("div[role='dialog'] div[contenteditable='true']:visible").count() > 0
+                        has_post_btn = page.locator("div[role='dialog'] div[aria-label='Đăng']:visible, div[role='dialog'] div[aria-label='Post']:visible").count() > 0
+                        if not has_editor and not has_post_btn:
+                            closed = True
+                            break
                     dismiss_btn = page.locator(
                         "div[role='dialog'] div[role='button']:has-text('Lúc khác'), "
                         "div[role='dialog'] div[aria-label='Lúc khác'], "
@@ -158,7 +164,7 @@ def publish_photo_to_facebook(image_path: str, caption: str, fanpage_url: str = 
                     err = "Post dialog did not close within 60s (saved debug screenshot to storage/fb_post_error.png)."
                     logging.error(err)
                     context.close()
-                    return {"success": False, "error": err}
+                    return {"success": False, "submitted": True, "error": err}
                 logging.info(f"[OK] Successfully posted book to Fanpage: {target_page}")
                 context.close()
                 return {

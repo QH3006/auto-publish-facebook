@@ -256,6 +256,8 @@ def get_unposted_eligible_images(min_days: int = 7, max_days: int = 30) -> List[
             SELECT id, post_id, local_path, post_date, image_url, title, author, category, price, is_reviewed 
             FROM images 
             WHERE is_published = 0 AND status = 'available' AND (is_single_book = 1 OR is_single_book IS NULL)
+              AND (image_hash IS NULL OR image_hash = '' OR image_hash NOT IN (SELECT image_hash FROM images WHERE is_published = 1 AND image_hash IS NOT NULL AND image_hash != ''))
+              AND (title IS NULL OR TRIM(title) = '' OR LOWER(TRIM(title)) NOT IN (SELECT LOWER(TRIM(title)) FROM images WHERE is_published = 1 AND title IS NOT NULL AND TRIM(title) != ''))
             ORDER BY is_reviewed DESC, RANDOM()
         """)
         rows = cursor.fetchall()
@@ -273,23 +275,23 @@ def get_unposted_eligible_images(min_days: int = 7, max_days: int = 30) -> List[
                     if os.path.exists(cand): lp = cand
                 if not lp or os.path.exists(lp):
                     results.append({
-                        "id": row["id"],
-                        "post_id": row["post_id"],
-                        "local_path": lp,
-                        "post_date": row["post_date"],
-                        "title": row["title"],
-                        "author": row["author"],
-                        "category": row["category"],
-                        "price": row["price"],
-                        "age_days": age_days,
-                        "image_url": row["image_url"]
+                        "id": row["id"], "post_id": row["post_id"], "local_path": lp,
+                        "post_date": row["post_date"], "title": row["title"], "author": row["author"],
+                        "category": row["category"], "price": row["price"], "age_days": age_days, "image_url": row["image_url"]
                     })
     return results
 def mark_image_published(image_id: int):
     with get_connection() as conn:
         cursor = conn.cursor()
         now_str = datetime.now().isoformat()
+        cursor.execute("SELECT image_hash, title FROM images WHERE id = ?", (image_id,))
+        row = cursor.fetchone()
         cursor.execute("UPDATE images SET is_published = 1, published_at = ? WHERE id = ?", (now_str, image_id))
+        if row and (row["image_hash"] or (row["title"] and row["title"].strip())):
+            cursor.execute(
+                "UPDATE images SET is_published = 1, published_at = COALESCE(published_at, ?) WHERE is_published = 0 AND ((image_hash IS NOT NULL AND image_hash != '' AND image_hash = ?) OR (title IS NOT NULL AND TRIM(title) != '' AND LOWER(TRIM(title)) = LOWER(TRIM(?))))",
+                (now_str, row["image_hash"] or "", row["title"] or "")
+            )
         conn.commit()
 def get_expired_images() -> List[Dict]:
     today = date.today()

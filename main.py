@@ -27,40 +27,50 @@ stream_handler.setFormatter(formatter)
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.INFO)
 root_logger.handlers = [stream_handler, file_handler]
+_post_lock = threading.Lock()
 def execute_single_post(min_days: int = None, max_days: int = None):
-    logging.info("--- STARTING SINGLE-IMAGE POSTING SESSION ---")
-    p_min = min_days if min_days is not None else config.MIN_DAYS_OLD
-    p_max = max_days if max_days is not None else config.MAX_DAYS_OLD
-    candidates = database.get_unposted_eligible_images(
-        min_days=p_min,
-        max_days=p_max
-    )
-    if not candidates:
-        msg = f"Kho chưa có sách đủ tuổi ({p_min}-{p_max} ngày) để đăng bài Fanpage."
-        logging.warning(msg)
-        telegram_bot.send_alert_to_all(f"⚠️ [LƯU Ý CỮ ĐĂNG] {msg}")
+    if not _post_lock.acquire(blocking=False):
+        logging.warning("Đang có một tiến trình đăng bài Fanpage khác chạy song song, bỏ qua lượt này.")
         return False
-    selected = random.choice(candidates)
-    image_id = selected["id"]
-    local_path = selected["local_path"]
-    age_days = selected["age_days"]
-    logging.info(f"Selected image ID {image_id} (age: {age_days} days) at: {local_path}")
-    logging.info(f"Generating 3-5 line intro caption using [{config.AI_PROVIDER}]...")
-    caption = ai_engine.generate_caption_for_image(local_path, book_info=selected)
-    logging.info(f"Generated caption:\n{caption}")
-    result = fb_poster.publish_photo_to_facebook(local_path, caption)
-    if result.get("success"):
-        database.mark_image_published(image_id)
-        logging.info(f"SUCCESS: Image ID {image_id} published successfully.")
-        title_disp = selected.get('title') or 'Sách hay'
-        price_disp = f"\n💰 Giá: {telegram_bot.format_price_vnd(selected.get('price'))}" if selected.get('price') else ""
-        telegram_bot.send_alert_to_all(f"✅ [TỰ ĐỘNG ĐĂNG BÀI] Đã đăng thành công lên Fanpage!\n📖 Tựa: '{title_disp}'{price_disp}")
-        return True
-    else:
-        err_msg = result.get('error') or 'Lỗi không xác định'
-        logging.error(f"Failed to publish: {err_msg}")
-        telegram_bot.send_alert_to_all(f"⚠️ [LỖI ĐĂNG BÀI] Cữ đăng Fanpage thất bại:\nLý do: {err_msg}")
-        return False
+    try:
+        logging.info("--- STARTING SINGLE-IMAGE POSTING SESSION ---")
+        p_min = min_days if min_days is not None else config.MIN_DAYS_OLD
+        p_max = max_days if max_days is not None else config.MAX_DAYS_OLD
+        candidates = database.get_unposted_eligible_images(
+            min_days=p_min,
+            max_days=p_max
+        )
+        if not candidates:
+            msg = f"Kho chưa có sách đủ tuổi ({p_min}-{p_max} ngày) để đăng bài Fanpage."
+            logging.warning(msg)
+            telegram_bot.send_alert_to_all(f"⚠️ [LƯU Ý CỮ ĐĂNG] {msg}")
+            return False
+        selected = random.choice(candidates)
+        image_id = selected["id"]
+        local_path = selected["local_path"]
+        age_days = selected["age_days"]
+        logging.info(f"Selected image ID {image_id} (age: {age_days} days) at: {local_path}")
+        logging.info(f"Generating 3-5 line intro caption using [{config.AI_PROVIDER}]...")
+        caption = ai_engine.generate_caption_for_image(local_path, book_info=selected)
+        logging.info(f"Generated caption:\n{caption}")
+        result = fb_poster.publish_photo_to_facebook(local_path, caption)
+        if result.get("success"):
+            database.mark_image_published(image_id)
+            logging.info(f"SUCCESS: Image ID {image_id} published successfully.")
+            title_disp = selected.get('title') or 'Sách hay'
+            price_disp = f"\n💰 Giá: {telegram_bot.format_price_vnd(selected.get('price'))}" if selected.get('price') else ""
+            telegram_bot.send_alert_to_all(f"✅ [TỰ ĐỘNG ĐĂNG BÀI] Đã đăng thành công lên Fanpage!\n📖 Tựa: '{title_disp}'{price_disp}")
+            return True
+        else:
+            if result.get("submitted"):
+                database.mark_image_published(image_id)
+                logging.warning(f"Marked Image ID {image_id} as published because 'Đăng' was already clicked.")
+            err_msg = result.get('error') or 'Lỗi không xác định'
+            logging.error(f"Failed to publish: {err_msg}")
+            telegram_bot.send_alert_to_all(f"⚠️ [LỖI ĐĂNG BÀI] Cữ đăng Fanpage thất bại:\nLý do: {err_msg}")
+            return False
+    finally:
+        _post_lock.release()
 def search_inventory(keyword: str):
     print(f"\nSearching available books matching: '{keyword}'...")
     results = database.search_available_books(keyword)
