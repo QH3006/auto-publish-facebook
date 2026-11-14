@@ -19,16 +19,37 @@ def is_seller_post(text: str) -> bool:
     for kw in getattr(config, 'SELLER_EXCLUDE_KEYWORDS', []):
         if kw.lower() in norm:
             return True
+    if re.search(r"\b(mình|em|e|tớ|mk|shop|tiệm)\s+(xin\s+)?(phép\s+)?(ad\s+|admin\s+)?(cần\s+|muốn\s+|đăng\s+|lên\s+)?(pass|bán|thanh lý|nhượng|xả)\b", norm):
+        return True
+    if re.search(r"\b(xin phép|xin)\s+(ad\s+|admin\s+|mọi người\s+|mn\s+)?(được\s+)?(pass|bán|thanh lý|nhượng|xả)\b", norm):
+        return True
+    if re.search(r"\bpass\s+(các|mấy|vài|ít|những|toàn bộ|hết|lẻ|combo|set|đồng giá|nhanh|gấp|rẻ|bớt|thu hồi|lại mấy|lại các|lại vài|lại ít|đầu sách|cuốn này|quyển này)\b", norm):
+        return True
+    if re.search(r"\b(mình|em|e|tớ|mk|shop|tiệm)\s+(còn|có|đang có|lên)\s+(mấy|vài|ít|một số|các)\s+(cuốn|quyển|đầu sách|bộ|sách)\b", norm):
+        return True
+    if len(re.findall(r"\b\d{2,3}\s*k\b|\b\d{2,3}\.\d{3}\s*đ?\b", norm)) >= 2:
+        return True
+    if re.search(r"(\bgiá\s*:?\s*\d{2,3}\s*k\b|\bpass\s+\d{2,3}\s*k\b|\b\d{2,3}\s*k\s*/\s*(cuốn|quyển|bộ|c)\b)", norm) and not any(w in norm for w in ["mua giá", "tài chính", "tầm giá"]):
+        return True
     if any(p in norm for p in ["pass lại cho", "mình pass lại", "em pass lại", "cần pass lại", "muốn pass lại", "pass lại giá", "pass lại rẻ", "pass lại một số", "pass lại mấy", "pass bớt", "cần pass", "muốn pass"]):
         return True
-    if "pass lại" in norm and not any(b in norm for b in ["ai pass lại", "tìm pass lại", "hóng pass lại", "xin pass lại", "bác nào pass lại", "bạn nào pass lại", "ai có pass lại"]):
+    if "pass lại" in norm and not any(b in norm for b in ["ai pass lại", "tìm pass lại", "hóng pass lại", "bác nào pass lại", "bạn nào pass lại", "ai có pass lại"]):
         return True
     if any(a in norm for a in ["bạn nào cần", "ai cần", "bác nào cần", "ai quan tâm", "bác nào quan tâm", "bạn nào quan tâm", "ai thích"]):
         return True
     if any(c in norm for c in ["nhắn mình", "ib mình", "inbox mình", "liên hệ mình", "nhắn em", "ib em", "inbox em", "liên hệ em", "nhắn tin mình"]):
-        if not any(b in norm for b in ["ai có", "bạn nào có", "bác nào có", "có ai có", "ai còn"]):
+        if not any(b in norm for b in ["ai có", "bạn nào có", "bác nào có", "có ai có", "ai còn", "tìm mua", "cần mua", "ai pass", "bạn nào pass", "bác nào pass", "có ai pass"]):
             return True
     return False
+def purge_false_seller_leads() -> int:
+    removed = 0
+    for lead in database.get_leads("pending"):
+        if is_seller_post(lead.get("content_snippet", "")):
+            if database.delete_lead(lead["id"]):
+                removed += 1
+    if removed:
+        logging.info(f"[DỌN KHO LEAD] Đã tự động xóa {removed} bài đăng bán bị nhận nhầm trước đó.")
+    return removed
 def has_buyer_intent(text: str) -> bool:
     if not text or is_seller_post(text):
         return False
@@ -38,6 +59,7 @@ def has_buyer_intent(text: str) -> bool:
             return True
     return False
 def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
+    purge_false_seller_leads()
     group_urls = config.MONITORED_GROUP_URLS
     if not group_urls:
         logging.warning("Chưa cấu hình URL nhóm Facebook trong config.MONITORED_GROUP_URLS.")
@@ -68,19 +90,28 @@ def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
                     time.sleep(3)
                     page.goto(group_url, wait_until="domcontentloaded", timeout=45000)
                 time.sleep(3)
-                try:
-                    page.mouse.click(600, 400)
-                    time.sleep(0.5)
-                except Exception:
-                    pass
                 seen_texts = set()
                 group_cards = []
                 for s_i in range(scroll_count):
+                    try:
+                        page.evaluate("""() => {
+                            let feed = document.querySelector("div[role='feed']") || document.body;
+                            for (let b of feed.querySelectorAll("div[role='button']")) {
+                                let tx = (b.innerText || '').trim().toLowerCase();
+                                if (tx === 'xem thêm' || tx === 'see more') {
+                                    try { b.click(); } catch (e) {}
+                                }
+                            }
+                        }""")
+                        time.sleep(0.4)
+                    except Exception:
+                        pass
                     items = page.evaluate("""() => {
                         let out = [];
                         let feed = document.querySelector("div[role='feed']") || document.body;
                         let els = feed.querySelectorAll("div[dir='auto']");
                         for (let el of els) {
+                            if (el.closest("ul, [aria-label*='Bình luận' i], [aria-label*='Comment' i]")) continue;
                             let t = el.innerText ? el.innerText.trim() : '';
                             if (t.length < 20) continue;
                             let p = el;
@@ -88,7 +119,7 @@ def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
                             let dateText = '';
                             let imgs = [];
                             let level = 0;
-                            while (p && p !== document.body && level < 25) {
+                            while (p && p !== document.body && level < 12) {
                                 if (!postLink) {
                                     if (p.tagName === 'A' && (p.href.includes('/posts/') || p.href.includes('/permalink/') || p.href.includes('story_fbid') || p.href.includes('multi_permalinks'))) {
                                         postLink = p.href.split('?')[0];
@@ -116,6 +147,7 @@ def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
                                         }
                                     }
                                 }
+                                if (p.getAttribute && p.getAttribute('role') === 'article') break;
                                 p = p.parentElement;
                                 level++;
                             }
@@ -128,10 +160,29 @@ def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
                         if t and t not in seen_texts:
                             seen_texts.add(t)
                             group_cards.append(it)
-                    for _ in range(3):
-                        page.keyboard.press("PageDown")
-                        time.sleep(0.3)
-                    time.sleep(1.2)
+                    try:
+                        page.evaluate("window.scrollBy(0, 1400)")
+                    except Exception:
+                        pass
+                    time.sleep(1.5)
+                grouped_cards, by_link = [], {}
+                for it in group_cards:
+                    link = (it.get("postLink") or "").strip()
+                    if link:
+                        if link not in by_link:
+                            by_link[link] = {"text": it["text"], "postLink": link, "dateText": it.get("dateText", ""), "imgs": list(dict.fromkeys(it.get("imgs", [])))}
+                            grouped_cards.append(by_link[link])
+                        else:
+                            if it["text"] not in by_link[link]["text"]:
+                                by_link[link]["text"] += "\n" + it["text"]
+                            if not by_link[link]["dateText"] and it.get("dateText"):
+                                by_link[link]["dateText"] = it["dateText"]
+                            for img in it.get("imgs", []):
+                                if img not in by_link[link]["imgs"]:
+                                    by_link[link]["imgs"].append(img)
+                    else:
+                        grouped_cards.append(it)
+                group_cards = grouped_cards
                 logging.info(f"-> Thu thập được {len(group_cards)} bài viết trong nhóm. Đang phân tích...")
                 for item in group_cards:
                     try:
@@ -154,6 +205,9 @@ def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
                         has_img_intent = len(post_imgs) > 0 and any(kw in card_text.lower() for kw in ["ai có như hình", "ai có như ảnh", "tìm như hình", "tìm như ảnh", "cần tìm như", "ai có mấy cuốn này", "ai có mấy quyển này", "tìm những cuốn này", "ai có trong hình", "ai có trong ảnh", "ai có cuốn này", "ai có quyển này", "ai còn cuốn", "ảnh đính kèm"])
                         if not has_intent and not has_img_intent:
                             continue
+                        if not ai_engine.verify_buyer_post_with_ai(card_text):
+                            logging.info(f"   -> [BỎ QUA - AI XÁC ĐỊNH LÀ NGƯỜI BÁN]: \"{card_text[:60]}...\"")
+                            continue
                         snippet = card_text.replace("\n", " ").strip()[:140]
                         logging.info(f"[PHÁT HIỆN BÀI ĐĂNG CÓ Ý ĐỊNH MUA]: \"{snippet}...\"")
                         matched_books = []
@@ -173,8 +227,12 @@ def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
                                         with open(temp_path, "wb") as f:
                                             f.write(resp.content)
                                         logging.info(f"   [ĐỌC ẢNH ĐÍNH KÈM] Gọi Gemini Vision đọc bìa/ghi chú (ảnh {img_idx+1})...")
-                                        vision_data = ai_engine.extract_buyer_inquiry_from_image(temp_path)
+                                        vision_data = ai_engine.extract_buyer_inquiry_from_image(temp_path, post_text=card_text)
                                         time.sleep(2.5)
+                                        if vision_data.get("is_buyer") is False:
+                                            logging.info("   -> [BỎ QUA - VISION XÁC ĐỊNH ẢNH/BÀI BÁN]")
+                                            matched_books.clear()
+                                            break
                                         found_titles = vision_data.get("titles", [])
                                         if found_titles:
                                             logging.info(f"   -> Đọc được từ ảnh: {found_titles}")

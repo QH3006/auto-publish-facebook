@@ -45,7 +45,23 @@ def execute_single_post(min_days: int = None, max_days: int = None):
             logging.warning(msg)
             telegram_bot.send_alert_to_all(f"⚠️ [LƯU Ý CỮ ĐĂNG] {msg}")
             return False
-        selected = random.choice(candidates)
+        random.shuffle(candidates)
+        selected = None
+        for cand in candidates[:5]:
+            ok_qual, qual_reason = ai_engine.check_book_image_quality(cand["local_path"])
+            if not ok_qual:
+                logging.warning(f"[BỎ QUA ẢNH MỜ/BỤI] Sách ID {cand['id']} ('{cand.get('title')}'): {qual_reason} -> Giữ trong kho, tắt đăng Fanpage.")
+                with database.get_connection() as conn:
+                    conn.execute("UPDATE images SET is_single_book = 0 WHERE id = ?", (cand["id"],))
+                    conn.commit()
+                continue
+            selected = cand
+            break
+        if not selected:
+            msg = "Không tìm thấy cuốn sách nào có ảnh đủ rõ nét và sạch đẹp trong lượt bốc này."
+            logging.warning(msg)
+            telegram_bot.send_alert_to_all(f"⚠️ [LƯU Ý CỮ ĐĂNG] {msg}")
+            return False
         image_id = selected["id"]
         local_path = selected["local_path"]
         age_days = selected["age_days"]

@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import re
 import hashlib
 from datetime import datetime, date, timedelta
 from typing import List, Dict, Optional
@@ -225,22 +226,19 @@ def search_available_books(keyword: str) -> List[Dict]:
             """, (kw_pattern, kw_pattern, kw_pattern, kw_pattern, kw_pattern))
         rows = cursor.fetchall()
         if not rows:
-            cursor.execute("""
-                SELECT i.id, i.post_id, i.local_path, i.title, i.author, i.category, i.price, i.status, 
-                       i.post_date, p.post_text
-                FROM images i
-                LEFT JOIN posts p ON i.post_id = p.post_id
-                WHERE i.status = 'available'
-            """)
-            all_available = cursor.fetchall()
+            all_available = cursor.execute("SELECT i.id, i.post_id, i.local_path, i.title, i.author, i.category, i.price, i.status, i.post_date, p.post_text FROM images i LEFT JOIN posts p ON i.post_id = p.post_id WHERE i.status = 'available'").fetchall()
+            norm_fn = lambda s: re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", (s or "").lower())).strip()
+            q_norm = norm_fn(cleaned_query)
             matched_rows = []
             generic_skip = {"sách hay", "sách cũ", "sách mới", "sách", "truyện", "tiểu thuyết"}
             for item in all_available:
                 title = (item["title"] or "").strip().lower()
                 author = (item["author"] or "").strip().lower()
-                if title in generic_skip:
+                t_norm, a_norm = norm_fn(title), norm_fn(author)
+                if title in generic_skip or t_norm in generic_skip:
                     continue
-                if (title and len(title) >= 4 and title in cleaned_query) or (author and len(author) >= 4 and author in cleaned_query):
+                t_main = norm_fn(re.split(r"[:\-–]", item["title"] or "")[0])
+                if (len(t_norm) >= 4 and (t_norm in q_norm or (len(q_norm) >= 5 and q_norm in t_norm))) or (len(t_main) >= 5 and t_main in q_norm) or (len(a_norm) >= 4 and a_norm in q_norm):
                     matched_rows.append(item)
             rows = matched_rows
         for row in rows:

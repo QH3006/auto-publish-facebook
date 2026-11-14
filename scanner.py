@@ -55,6 +55,8 @@ def download_and_save_book_theater(image_url: str, post_id: str, post_date_str: 
         book_title = meta.get("title", "").strip()
         book_author = meta.get("author", "").strip()
         book_category = default_category or meta.get("category", "").strip() or "Khác"
+        is_clean = 1 if meta.get("is_clean_photo", True) else 0
+        q_note = meta.get("quality_note", "").strip()
         if not is_valid or not book_title or book_title == "Nhiều cuốn sách":
             logging.info(f"-> [BỎ QUA] Ảnh chỉ là chồng sách/kệ sách hoặc không nhận diện được tựa sách chính ({filename}).")
             try:
@@ -79,12 +81,15 @@ def download_and_save_book_theater(image_url: str, post_id: str, post_date_str: 
             author=book_author,
             category=book_category,
             price=price_str,
-            is_single_book=1,
+            is_single_book=is_clean,
             is_reviewed=0
         )
         if saved:
             price_display = f"{int(price_str):,} đ".replace(",", ".") if price_str else "Chưa có giá"
-            logging.info(f"-> [LƯU THÀNH CÔNG] Sách: '{book_title}' | Thể loại: '{book_category}' | Tác giả: '{book_author}' | Giá: {price_display} | Chờ duyệt")
+            if is_clean == 0:
+                logging.info(f"-> [LƯU KHO - CHẶN ĐĂNG FANPAGE] Sách: '{book_title}' | Lý do: {q_note or 'Ảnh mờ/bụi'}")
+            else:
+                logging.info(f"-> [LƯU THÀNH CÔNG] Sách: '{book_title}' | Thể loại: '{book_category}' | Tác giả: '{book_author}' | Giá: {price_display} | Chờ duyệt")
             return local_path
         return None
     except Exception as e:

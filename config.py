@@ -62,11 +62,16 @@ MONITORED_GROUP_URLS = [
     "https://www.facebook.com/groups/1374822839964696/",
 ]
 BUYER_INTENT_KEYWORDS = [
-    "tìm mua", "cần mua", "hỏi mua", "mua lại", "tìm sách", "cần tìm",
-    "mình cần sách", "em cần sách", "đang cần sách", "cần mua sách", "cần tìm sách",
-    "tìm cuốn", "tìm quyển", "tìm bộ", "tìm tập", "ai có cuốn", "ai có quyển", "ai có sách",
-    "ai có bộ", "ai pass", "ai pass lại", "xin pass", "hóng pass", "tìm pass", "ai bán",
-    "bác nào có", "bạn nào có", "ai có không", "ai có ko", "ai có ib", "ai có inbox", "ai còn cuốn", "ai còn quyển"
+    "tìm mua", "cần mua", "hỏi mua", "mua lại", "muốn mua", "tìm sách", "cần tìm",
+    "mình cần sách", "em cần sách", "đang cần sách", "cần mua sách", "cần tìm sách", "đang tìm sách",
+    "tìm cuốn", "tìm quyển", "tìm bộ", "tìm tập", "mình tìm cuốn", "em tìm cuốn",
+    "mình tìm quyển", "em tìm quyển", "mình tìm bộ", "em tìm bộ", "đang tìm cuốn",
+    "ai có cuốn", "ai có quyển", "ai có sách", "ai có bộ", "ai còn sách",
+    "ai pass", "ai pass lại", "ai có pass", "bạn nào pass", "bác nào pass",
+    "pass cho mình", "pass cho em", "pass lại cho mình", "pass lại cho em", "để lại cho mình", "nhượng lại cho mình",
+    "tìm người pass", "có ai pass", "hóng pass", "tìm pass", "ai bán", "có ai bán",
+    "bác nào có", "bạn nào có", "ai có không", "ai có ko", "ai có ib", "ai có inbox", "ai còn cuốn", "ai còn quyển",
+    "tìm như hình", "tìm như ảnh", "mua như hình", "mua như ảnh"
 ]
 SELLER_EXCLUDE_KEYWORDS = [
     "#pass", "pass nhanh", "pass gấp", "pass all", "mình pass", "em pass", "e pass", "pass bớt",
@@ -74,7 +79,12 @@ SELLER_EXCLUDE_KEYWORDS = [
     "lấy all", "lấy cả", "lấy hết", "nhận all ptgd", "ptgd", "ship cod", "ck full", "bank full",
     "giá trên ảnh", "giá trong ảnh", "giá như hình", "đồng giá", "pass lại cho", "mình pass lại", "em pass lại",
     "cần pass lại", "muốn pass lại", "pass lại giá", "pass lại rẻ", "bạn nào cần", "ai cần ib", "ai cần nhắn",
-    "inbox mình", "nhắn mình", "ib mình", "xả sách", "chủ mới", "tìm chủ mới", "tìm chủ"
+    "xả sách", "chủ mới", "tìm chủ mới", "tìm chủ", "nhà mới", "tìm nhà mới",
+    "độ mới", "mới 99%", "mới 98%", "mới 95%", "new seal", "nguyên seal", "lên kệ",
+    "còn mấy cuốn", "còn vài cuốn", "mình có mấy cuốn", "em có mấy cuốn", "giá chỉ", "freeship", "free ship", "không cod", "ko cod",
+    "xin pass", "mình xin pass", "em xin pass", "e xin pass", "xin phép pass", "xin phép ad", "xin phép admin",
+    "pass các", "pass mấy", "pass vài", "pass ít", "pass thu hồi", "cần pass", "muốn pass",
+    "mình bán", "em bán", "cần bán", "muốn bán", "nhượng lại"
 ]
 LEAD_SCAN_INTERVAL_MINUTES = 120
 LEAD_SCAN_QUIET_START_HOUR = 22
@@ -86,6 +96,12 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 TARGET_POST_GROUP_URLS = [
     # "https://www.facebook.com/groups/example_group",
     "https://www.facebook.com/groups/1374822839964696",
+    "https://www.facebook.com/groups/1572146076366815",
+    "https://www.facebook.com/groups/979050155491747",
+    "https://www.facebook.com/groups/225413611557113",
+    "https://www.facebook.com/groups/703844251801628",
+    "https://www.facebook.com/groups/477952032340642",
+    "https://www.facebook.com/groups/3440463649349254",
 ]
 GROUP_POSTING_HOUR = "18:00"
 GROUP_POST_IMAGES_COUNT = 10

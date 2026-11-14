@@ -4,7 +4,8 @@ import base64
 import json
 import logging
 import requests
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
+from PIL import Image, ImageFilter, ImageStat, ImageChops
 from PIL import Image
 import config
 import book_lookup
@@ -23,7 +24,9 @@ Hãy nhìn vào bức ảnh này và trích xuất thông tin theo định dạn
   "is_valid_book": true,
   "title": "Tên cuốn sách chính",
   "author": "Tên tác giả",
-  "category": "Thể loại sách (ví dụ: Văn học, Tiểu thuyết, Trinh thám, Manga, Kỹ năng, Kinh tế, Lịch sử, Thiếu nhi, Thơ ca, Tâm lý)"
+  "category": "Thể loại sách (ví dụ: Văn học, Tiểu thuyết, Trinh thám, Manga, Kỹ năng, Kinh tế, Lịch sử, Thiếu nhi, Thơ ca, Tâm lý)",
+  "is_clean_photo": true,
+  "quality_note": ""
 }
 QUY TẮC PHÂN TÍCH QUAN TRỌNG:
 1. Cuốn sách làm chủ thể chính:
@@ -34,6 +37,9 @@ QUY TẮC PHÂN TÍCH QUAN TRỌNG:
 2. Trường hợp ảnh KHÔNG hợp lệ (ảnh chồng sách hoặc kệ sách):
    - Nếu ảnh chỉ chụp một chồng/đống nhiều cuốn sách nằm ngang xếp từ dưới lên, hoặc chụp cả một kệ sách mà KHÔNG có cuốn sách nào quay mặt bìa làm chủ thể chính ở giữa.
    - Khi đó: "is_valid_book": false, "title": "", "author": "", "category": "".
+3. Đánh giá chất lượng ảnh để đăng Fanpage:
+   - Đặt "is_clean_photo": false và ghi lý do ngắn vào "quality_note" nếu ảnh bị mờ nhòe, rung tay, lóa sáng nặng không đọc rõ chữ, hoặc cuốn sách trông bám bụi bẩn, ố mốc, rách nát nặng mất thẩm mỹ.
+   - Đặt "is_clean_photo": true nếu ảnh rõ nét và sách trông sạch sẽ, tươm tất.
 Chỉ xuất đúng cú pháp JSON thuần, tuyệt đối không bọc markdown hay thêm lời giải thích nào.
 """
 def build_grounded_caption_prompt(title: str = "", author: str = "", category: str = "", summary_data: Optional[Dict[str, str]] = None) -> str:
@@ -187,87 +193,169 @@ def generate_caption_for_image(image_path: str, book_info: Optional[Dict[str, An
     if result:
         return result
     return book_lookup.format_factual_post_without_ai(title, author, category, summary_data)
-def extract_book_info(image_path: str) -> Dict[str, str]:
+def _call_vision_provider(image_path: str, prompt: str) -> Optional[str]:
     provider = config.AI_PROVIDER.lower()
-    raw = None
     if provider == "gemini":
-        raw = _call_gemini_vision(image_path, BOOK_EXTRACT_PROMPT)
-    elif provider == "openai_compatible":
+        return _call_gemini_vision(image_path, prompt)
+    if provider == "openai_compatible":
         b64 = image_to_base64(image_path)
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": BOOK_EXTRACT_PROMPT},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
-                ]
-            }
-        ]
-        raw = _call_openai_compatible(messages)
-    elif provider == "ollama":
-        raw = _call_ollama_vision(image_path, BOOK_EXTRACT_PROMPT)
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+            ]
+        }]
+        return _call_openai_compatible(messages)
+    if provider == "ollama":
+        return _call_ollama_vision(image_path, prompt)
+    return None
+def check_local_image_sharpness(image_path: str) -> Tuple[bool, str]:
+    if not image_path or not os.path.exists(image_path):
+        return False, "Không tìm thấy file ảnh"
+    try:
+        with Image.open(image_path) as img:
+            w, h = img.size
+            if w < 320 or h < 320:
+                return False, f"Ảnh độ phân giải quá thấp ({w}x{h})"
+            g = img.convert("L")
+            if max(w, h) > 1000:
+                scale = 1000.0 / max(w, h)
+                g = g.resize((int(w * scale), int(h * scale)))
+            diff = ImageChops.difference(g, g.filter(ImageFilter.GaussianBlur(radius=2)))
+            gw, gh = diff.size
+            diff = diff.crop((4, 4, max(5, gw - 4), max(5, gh - 4)))
+            hf_std = ImageStat.Stat(diff).stddev[0]
+            if hf_std < 3.0:
+                return False, f"Ảnh bị mờ/out nét (độ nét {hf_std:.1f})"
+        return True, "OK"
+    except Exception as e:
+        return False, f"Lỗi kiểm tra ảnh: {e}"
+def check_book_image_quality(image_path: str) -> Tuple[bool, str]:
+    sharp_ok, sharp_reason = check_local_image_sharpness(image_path)
+    if not sharp_ok:
+        return False, sharp_reason
+    prompt = """Hãy kiểm tra chất lượng bức ảnh sách này để đăng bán Fanpage tiệm sách cũ.
+Đặt "is_good": false nếu gặp một trong các lỗi sau:
+(a) Ảnh bị mờ, out nét, rung tay, quá tối hoặc lóa sáng nặng không nhìn rõ bìa.
+(b) Cuốn sách trong ảnh trông bám bụi bẩn rõ rệt, ố mốc, bẩn thỉu hoặc rách nát nặng mất thẩm mỹ.
+Đặt "is_good": true nếu ảnh rõ nét và cuốn sách trông sạch sẽ, lịch sự để đăng bán.
+Chỉ xuất JSON thuần: {"is_good": true, "reason": ""}"""
+    raw = _call_vision_provider(image_path, prompt)
     if raw:
         try:
             clean = raw.replace("```json", "").replace("```", "").strip()
-            data = json.loads(clean)
+            s, e = clean.find("{"), clean.rfind("}")
+            data = json.loads(clean[s:e+1] if s != -1 and e > s else clean)
+            if isinstance(data, dict) and data.get("is_good") is False:
+                reason = (data.get("reason") or "").strip() or "Ảnh mờ hoặc sách bụi bẩn"
+                return False, reason
+        except Exception:
+            pass
+    return True, "OK"
+def extract_book_info(image_path: str) -> Dict[str, Any]:
+    sharp_ok, sharp_reason = check_local_image_sharpness(image_path)
+    raw = _call_vision_provider(image_path, BOOK_EXTRACT_PROMPT)
+    if raw:
+        try:
+            clean = raw.replace("```json", "").replace("```", "").strip()
+            s, e = clean.find("{"), clean.rfind("}")
+            data = json.loads(clean[s:e+1] if s != -1 and e > s else clean)
             if isinstance(data, dict):
                 cat = data.get("category", "").strip() or "Khác"
+                ai_clean = bool(data.get("is_clean_photo", True))
+                q_note = sharp_reason if not sharp_ok else (data.get("quality_note", "") or "").strip()
                 return {
                     "is_valid_book": data.get("is_valid_book", True),
                     "title": data.get("title", "").strip(),
                     "author": data.get("author", "").strip(),
-                    "category": cat
+                    "category": cat,
+                    "is_clean_photo": bool(sharp_ok and ai_clean),
+                    "quality_note": q_note
                 }
         except Exception:
             pass
-    return {"is_valid_book": True, "title": "Sách hay", "author": "", "category": "Khác"}
-BUYER_INQUIRY_IMAGE_PROMPT = """
-Hãy nhìn vào bức ảnh này. Bức ảnh này do người dùng đăng lên nhóm Facebook với mục đích tìm mua hoặc hỏi xin pass sách cũ.
-Bức ảnh có thể là:
-1. Ảnh chụp bìa 1 hoặc nhiều cuốn sách họ cần tìm.
-2. Ảnh chụp màn hình ứng dụng ghi chú (Notes), danh sách viết tay danh mục các cuốn sách cần mua.
-3. Ảnh chụp danh sách giỏ hàng, đơn hàng hoặc wishlist.
-Nhiệm vụ của bạn:
-Đọc toàn bộ chữ và hình ảnh bìa trong bức ảnh, trích xuất tất cả các tựa đề sách (title) và tên tác giả (author) nếu có.
-Trả về định dạng JSON thuần như sau:
-{
-  "titles": ["Tên sách 1", "Tên sách 2"],
-  "authors": ["Tên tác giả 1"]
-}
-Lưu ý:
-- Nếu không có cuốn sách nào hoặc không đọc được, trả về: {"titles": [], "authors": []}
-- Chỉ xuất JSON thuần, tuyệt đối không bọc markdown hay thêm lời giải thích nào.
-"""
-def extract_buyer_inquiry_from_image(image_path: str) -> Dict[str, Any]:
+    return {
+        "is_valid_book": True,
+        "title": "Sách hay",
+        "author": "",
+        "category": "Khác",
+        "is_clean_photo": sharp_ok,
+        "quality_note": "" if sharp_ok else sharp_reason
+    }
+def verify_buyer_post_with_ai(post_text: str) -> bool:
+    if not post_text or not post_text.strip():
+        return False
+    prompt = f"""Phân loại bài đăng trong nhóm mua bán sách cũ Facebook sau đây thành JSON duy nhất:
+Nội dung bài đăng:
+\"\"\"{post_text[:1000]}\"\"\"
+QUY TẮC PHÂN LOẠI NGHIÊM NGẶT:
+- Trả về {{"is_buyer": false}} nếu người đăng ĐANG CÓ SÁCH và muốn BÁN / PASS / THANH LÝ / NHƯỢNG LẠI (ví dụ: "Mình xin pass các đầu sách này ạ", "Em xin phép ad pass lại ít sách", liệt kê giá bán, tình trạng sách, mời người khác nhắn tin mua).
+- CHỈ trả về {{"is_buyer": true}} nếu người đăng THỰC SỰ CHƯA CÓ SÁCH và đang hỏi TÌM MUA / CẦN MUA / TÌM NGƯỜI BÁN LẠI cho mình.
+Chỉ xuất duy nhất JSON thuần {{"is_buyer": true}} hoặc {{"is_buyer": false}}, không giải thích."""
     provider = config.AI_PROVIDER.lower()
     raw = None
     if provider == "gemini":
-        raw = _call_gemini_vision(image_path, BUYER_INQUIRY_IMAGE_PROMPT)
+        raw = _call_gemini_grounded(prompt, use_google_search=False)
+    elif provider == "openai_compatible":
+        raw = _call_openai_compatible([{"role": "user", "content": prompt}])
+    if raw:
+        try:
+            clean = raw.replace("```json", "").replace("```", "").strip()
+            s, e = clean.find("{"), clean.rfind("}")
+            if s != -1 and e > s:
+                data = json.loads(clean[s:e+1])
+                if isinstance(data, dict) and "is_buyer" in data:
+                    return bool(data["is_buyer"])
+        except Exception:
+            pass
+    return True
+def _build_buyer_inquiry_prompt(post_text: str = "") -> str:
+    ctx = post_text[:600].strip() if post_text else "Không có"
+    return f"""Hãy nhìn bức ảnh này kèm nội dung bài viết đi kèm trong nhóm sách cũ Facebook:
+Nội dung bài viết đi kèm: \"\"\"{ctx}\"\"\"
+Nhiệm vụ 1 - Xác định vai trò người đăng:
+- Nếu bài viết hoặc bức ảnh là của NGƯỜI BÁN / ĐĂNG PASS / THANH LÝ SÁCH (ví dụ: "Mình xin pass...", "Em xin phép pass...", chụp chồng sách hoặc nhiều cuốn bày ra kèm giá/trạng thái để bán) -> đặt "is_buyer": false, "titles": [], "authors": [].
+- Chỉ khi thực sự là NGƯỜI ĐANG TÌM MUA / CẦN MUA sách (chụp bìa sách cần tìm, ghi chú wishlist, giỏ hàng) -> đặt "is_buyer": true và trích xuất tất cả tựa sách ("titles"), tác giả ("authors").
+Trả về JSON thuần theo đúng mẫu:
+{{"is_buyer": true, "titles": ["Tên sách 1"], "authors": ["Tên tác giả 1"]}}
+Không bọc markdown, không thêm lời giải thích."""
+def extract_buyer_inquiry_from_image(image_path: str, post_text: str = "") -> Dict[str, Any]:
+    provider = config.AI_PROVIDER.lower()
+    prompt = _build_buyer_inquiry_prompt(post_text)
+    raw = None
+    if provider == "gemini":
+        raw = _call_gemini_vision(image_path, prompt)
     elif provider == "openai_compatible":
         b64 = image_to_base64(image_path)
         messages = [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": BUYER_INQUIRY_IMAGE_PROMPT},
+                    {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
                 ]
             }
         ]
         raw = _call_openai_compatible(messages)
     elif provider == "ollama":
-        raw = _call_ollama_vision(image_path, BUYER_INQUIRY_IMAGE_PROMPT)
+        raw = _call_ollama_vision(image_path, prompt)
     if raw:
         try:
             clean = raw.replace("```json", "").replace("```", "").strip()
-            data = json.loads(clean)
+            s, e = clean.find("{"), clean.rfind("}")
+            data = json.loads(clean[s:e+1] if s != -1 and e > s else clean)
             if isinstance(data, dict):
+                is_buyer = bool(data.get("is_buyer", True))
+                if not is_buyer:
+                    return {"is_buyer": False, "titles": [], "authors": []}
                 return {
+                    "is_buyer": True,
                     "titles": data.get("titles", []),
                     "authors": data.get("authors", [])
                 }
         except Exception:
             pass
-    return {"titles": [], "authors": []}
+    return {"is_buyer": True, "titles": [], "authors": []}
 def get_fallback_caption() -> str:
     return "Một tựa sách hay cho những ngày thảnh thơi, bạn nhắn tiệm để rước sách về nhà nhé! #SachHay #TiemSachCuaThuong"
