@@ -225,6 +225,7 @@ def main():
     parser.add_argument("--post-now", action="store_true", help="Immediately test posting one image")
     parser.add_argument("--post-group-now", action="store_true", help="Immediately test posting 1 image to Facebook Group")
     parser.add_argument("--scan-now", action="store_true", help="Immediately scan target Facebook Page")
+    parser.add_argument("--backfill-prices", action="store_true", help="Re-scan recent page posts to backfill missing book prices")
     parser.add_argument("--clean-now", action="store_true", help="Clean sold-out expired books")
     parser.add_argument("--backup-now", action="store_true", help="Immediately create full backup and send to Telegram")
     parser.add_argument("--search", type=str, help="Search available books in inventory by keyword")
@@ -245,6 +246,8 @@ def main():
         group_poster.post_single_book_to_group()
     elif args.scan_now:
         scanner.run_scanner()
+    elif args.backfill_prices:
+        scanner.run_scanner(scrolls=30, backfill_missing=True)
     elif args.clean_now:
         cleaner.run_cleaner()
     elif args.backup_now:

@@ -3,31 +3,73 @@ import re
 from typing import Tuple
 import config
 from datetime import datetime, date, timedelta
+ENG_MONTHS = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6,
+    "jul": 7, "july": 7, "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
 def parse_vietnamese_date(text: str) -> str:
     today = date.today()
     if not text:
         return today.strftime("%Y-%m-%d")
-    text_lower = text.lower().strip()
-    m = re.search(r'(\d{1,2})\s+tháng\s+(\d{1,2})', text_lower)
+    text_lower = normalize_text(text).lower()
+    m = re.search(r'(\d{1,2})\s+tháng\s+(\d{1,2})(?:[,\s]+(\d{4}))?', text_lower)
     if m:
         day = int(m.group(1))
         month = int(m.group(2))
-        year = today.year
-        if month > today.month:
+        year = int(m.group(3)) if m.group(3) else today.year
+        if not m.group(3) and month > today.month:
             year -= 1
         try:
-            return date(year, month, day).strftime("%Y-%m-%d")
+            d = date(year, month, day)
+            if not m.group(3) and d > today:
+                d = date(year - 1, month, day)
+            return d.strftime("%Y-%m-%d")
         except ValueError:
             pass
-    m_day = re.search(r'(\d+)\s*ngày', text_lower)
+    m_en1 = re.search(
+        r'\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b(?:[,\s]+(\d{4}))?',
+        text_lower,
+    )
+    m_en2 = None if m_en1 else re.search(
+        r'\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\s+(\d{1,2})\b(?:[,\s]+(\d{4}))?',
+        text_lower,
+    )
+    if m_en1 or m_en2:
+        if m_en1:
+            day = int(m_en1.group(1))
+            month = ENG_MONTHS[m_en1.group(2)]
+            yr_str = m_en1.group(3)
+        else:
+            month = ENG_MONTHS[m_en2.group(1)]
+            day = int(m_en2.group(2))
+            yr_str = m_en2.group(3)
+        year = int(yr_str) if yr_str else today.year
+        if not yr_str and month > today.month:
+            year -= 1
+        try:
+            d = date(year, month, day)
+            if not yr_str and d > today:
+                d = date(year - 1, month, day)
+            return d.strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    m_hour = re.search(r'\b(\d{1,2})\s*(?:giờ|hours?|hrs?|h)\b', text_lower)
+    if m_hour:
+        hrs = int(m_hour.group(1))
+        return (datetime.now() - timedelta(hours=hrs)).strftime("%Y-%m-%d")
+    if re.search(r'(?:phút|vừa xong|giây|\bmins?\b|\bminutes?\b|\bjust now\b|\bsecs?\b|\bseconds?\b)', text_lower):
+        return today.strftime("%Y-%m-%d")
+    m_day = re.search(r'(\d+)\s*(?:ngày|days?|d)\b', text_lower)
     if m_day:
         days_ago = int(m_day.group(1))
         return (today - timedelta(days=days_ago)).strftime("%Y-%m-%d")
-    m_week = re.search(r'(\d+)\s*tuần', text_lower)
+    m_week = re.search(r'(\d+)\s*(?:tuần|weeks?|w)\b', text_lower)
     if m_week:
         weeks_ago = int(m_week.group(1))
         return (today - timedelta(days=weeks_ago * 7)).strftime("%Y-%m-%d")
-    if "hôm qua" in text_lower:
+    if "hôm qua" in text_lower or "yesterday" in text_lower:
         return (today - timedelta(days=1)).strftime("%Y-%m-%d")
     return today.strftime("%Y-%m-%d")
 def normalize_text(text: str) -> str:
