@@ -121,9 +121,15 @@ def format_factual_post_without_ai(title: str = "", author: str = "", category: 
     clean_title = (title or "").strip()
     clean_author = (author or "").strip()
     clean_cat = (category or "").strip()
-    header = f"📖 {clean_title}" if clean_title and norm_words(clean_title) not in GENERIC_TITLES else "📖 Một tựa sách hay vừa lên kệ tiệm hôm nay"
+    cat_part = f" {clean_cat.lower()}" if clean_cat and clean_cat.lower() not in {"khác", "chưa rõ", ""} else ""
+    if clean_title and norm_words(clean_title) not in GENERIC_TITLES:
+        header = f'Tiệm xin giới thiệu cuốn{cat_part} "{clean_title}"'
+    else:
+        header = f"Tiệm xin giới thiệu một cuốn{cat_part} hay vừa lên kệ"
     if clean_author and clean_author.lower() not in {"chưa rõ", "unknown", ""}:
-        header += f" — {clean_author}"
+        header += f" của tác giả {clean_author}."
+    else:
+        header += "."
     lines = [header]
     if summary_data and summary_data.get("summary"):
         raw = summary_data["summary"]
@@ -142,9 +148,6 @@ def format_factual_post_without_ai(title: str = "", author: str = "", category: 
         else:
             lines.append(raw[:260].rstrip() + "...")
     else:
-        if clean_cat and clean_cat.lower() not in {"khác", "chưa rõ", ""}:
-            lines.append(f"🏷️ Thể loại: {clean_cat} — Sách đang có sẵn tại kệ tiệm, bản đẹp giữ gìn cẩn thận.")
-        else:
-            lines.append("Sách đang có sẵn tại kệ tiệm, bản đẹp giữ gìn cẩn thận chờ bạn hữu duyên.")
-    lines.append("Bạn ưng cuốn này cứ nhắn tiệm để xem thêm chi tiết và rước sách về nhé! #SachHay #TiemSachCuaThuong")
+        lines.append("Sách đang có sẵn tại kệ, bản đẹp giữ gìn cẩn thận.")
+    lines.append("Nếu bạn muốn tìm đọc cuốn sách này, hãy nhắn liền cho tiệm mình nhé! #SachHay #TiemSachCuaThuong")
     return "\n".join(lines[:5])

@@ -74,9 +74,10 @@ Thông tin sách: {book_meta}
 {style_context}
 YÊU CẦU ĐỊNH DẠNG BÀI ĐĂNG (3 ĐẾN 5 DÒNG):
 - Độ dài: Chính xác từ 3 đến 5 dòng (ngắt dòng rõ ràng, dễ đọc trên Facebook).
-- Dòng 1: Giới thiệu tên sách và tác giả (nếu có).
+- Văn phong: Tự nhiên, gần gũi, xưng "tiệm" / "tiệm mình" và gọi người đọc là "bạn". TUYỆT ĐỐI KHÔNG mở đầu bằng "Dạ chào bạn", "Chào bạn", KHÔNG dùng các cụm sến như "chiếc tiệm nhỏ" hay đuôi câu "nhé ạ".
+- Dòng 1: Giới thiệu trực tiếp tên sách, thể loại (nếu có) và tác giả theo mẫu: Tiệm xin giới thiệu cuốn <thể loại> "<Tên sách>" của tác giả <Tác giả>.
 - Dòng 2-4: Tóm tắt súc tích, đúng sự thật về nội dung hoặc giá trị cốt lõi của cuốn sách theo nguồn chuẩn (tuyệt đối không phóng đại hay bịa đặt).
-- Dòng cuối: Lời nhắn nhẹ nhàng mời bạn đọc quan tâm nhắn tiệm, kèm 2-3 hashtag (#SachHay #TiemSachCuaThuong).
+- Dòng cuối: Lời nhắn gọn gàng, tự nhiên theo mẫu: Nếu bạn muốn tìm đọc cuốn sách này, hãy nhắn liền cho tiệm mình nhé! kèm 2-3 hashtag (#SachHay #TiemSachCuaThuong).
 - CHỈ xuất nội dung bài đăng hoàn chỉnh, không thêm lời chào hay giải thích thừa.
 """
 def image_to_base64(image_path: str) -> str:
