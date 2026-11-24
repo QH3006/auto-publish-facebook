@@ -14,6 +14,7 @@ from datetime import datetime
 import psutil
 import hashlib
 import ai_engine
+import ai_quota
 import config
 import database
 import settings_manager
@@ -86,7 +87,8 @@ def get_system_metrics() -> dict:
         "gpu_name": CACHED_GPU.get("name", "N/A"),
         "gpu_percent": CACHED_GPU.get("percent", 0.0),
         "uptime": f"{h}h {m}m {s}s",
-        "stats": stats
+        "stats": stats,
+        "ai_status": ai_quota.get_status()
     }
 class AdminRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):

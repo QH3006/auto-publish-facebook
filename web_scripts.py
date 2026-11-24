@@ -87,6 +87,22 @@ function fetchMetrics() {
             setElText('stock-val', d.stats.available_in_stock + ' cuốn');
             setElText('sold-val', d.stats.sold_out + ' / ' + d.stats.pending_leads);
         }
+        if (d.ai_status) {
+            let ai = d.ai_status, aiEl = document.getElementById('ai-val');
+            let stMap = {
+                ok: ['✅ Hoạt động tốt', '#3fb950'],
+                quota_exceeded: ['🚨 Hết hạn mức (429)', '#f85149'],
+                auth_error: ['🔑 Lỗi API Key', '#f85149'],
+                unconfigured: ['⚪ Chưa gắn API Key', '#8b949e'],
+                error: ['⚠️ Lỗi kết nối AI', '#d29922']
+            };
+            let [lbl, clr] = stMap[ai.status] || ['✅ Sẵn sàng', '#3fb950'];
+            if (aiEl) { aiEl.innerText = lbl; aiEl.style.color = clr; }
+            let tok = Number(ai.total_tokens_today || 0).toLocaleString('vi-VN');
+            let desc = `Hôm nay: ${tok} token (${ai.requests_today || 0} lượt)`;
+            if (ai.status === 'quota_exceeded' || ai.status === 'auth_error') desc += ai.last_error_at ? ` • Lỗi lúc ${ai.last_error_at}` : '';
+            setElText('ai-desc', desc);
+        }
     }).catch(() => {});
 }
 let allCategories = [];

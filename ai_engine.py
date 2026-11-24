@@ -9,6 +9,7 @@ from PIL import Image, ImageFilter, ImageStat, ImageChops
 from PIL import Image
 import config
 import book_lookup
+import ai_quota
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 CAPTION_PROMPT = """
 Bạn là người quản lý tiệm sách thân thiện, tinh tế và yêu sách.
@@ -96,13 +97,19 @@ def _call_gemini_vision(image_path: str, prompt: str) -> Optional[str]:
         payload = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime, "data": b64_img}}]}]}
         resp = requests.post(url, headers=headers, json=payload, timeout=45)
         if resp.status_code == 200:
-            return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+            data = resp.json()
+            ai_quota.record_success("gemini", config.GEMINI_MODEL, data.get("usageMetadata"))
+            return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         if resp.status_code == 429:
             logging.warning("[Gemini Vision] Đạt giới hạn req/phút, tự động chờ 12s để thử lại...")
             time.sleep(12)
             resp2 = requests.post(url, headers=headers, json=payload, timeout=45)
             if resp2.status_code == 200:
-                return resp2.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                data2 = resp2.json()
+                ai_quota.record_success("gemini", config.GEMINI_MODEL, data2.get("usageMetadata"))
+                return data2["candidates"][0]["content"]["parts"][0]["text"].strip()
+            resp = resp2
+        ai_quota.record_error("gemini", config.GEMINI_MODEL, resp.status_code, resp.text[:250])
         logging.error(f"[Gemini Vision] Error {resp.status_code}: {resp.text[:250]}")
         return None
     except Exception as e:
@@ -128,8 +135,10 @@ def _call_openai_compatible(messages: list, model: str = None) -> Optional[str]:
         resp = requests.post(url, headers=headers, json=payload, timeout=45)
         if resp.status_code == 200:
             data = resp.json()
+            ai_quota.record_success("openai_compatible", target_model, data.get("usage"))
             return data["choices"][0]["message"]["content"].strip()
         else:
+            ai_quota.record_error("openai_compatible", target_model, resp.status_code, resp.text[:250])
             logging.error(f"[OpenAI-Compatible] API Error {resp.status_code}: {resp.text}")
             return None
     except Exception as e:
@@ -164,9 +173,23 @@ def _call_gemini_grounded(prompt: str, use_google_search: bool = False) -> Optio
             payload["tools"] = [{"google_search": {}}]
         resp = requests.post(url, headers=headers, json=payload, timeout=45)
         if resp.status_code == 200:
-            parts = resp.json()["candidates"][0]["content"]["parts"]
+            data = resp.json()
+            ai_quota.record_success("gemini", config.GEMINI_MODEL, data.get("usageMetadata"))
+            parts = data["candidates"][0]["content"]["parts"]
             text = "\n".join(p.get("text", "") for p in parts if p.get("text")).strip()
             return text or None
+        if resp.status_code == 429:
+            logging.warning("[Gemini Grounded] Đạt giới hạn req/phút, chờ 12s thử lại...")
+            time.sleep(12)
+            resp2 = requests.post(url, headers=headers, json=payload, timeout=45)
+            if resp2.status_code == 200:
+                data2 = resp2.json()
+                ai_quota.record_success("gemini", config.GEMINI_MODEL, data2.get("usageMetadata"))
+                parts = data2["candidates"][0]["content"]["parts"]
+                text = "\n".join(p.get("text", "") for p in parts if p.get("text")).strip()
+                return text or None
+            resp = resp2
+        ai_quota.record_error("gemini", config.GEMINI_MODEL, resp.status_code, resp.text[:250])
         logging.error(f"[Gemini Grounded] Error {resp.status_code}: {resp.text[:250]}")
     except Exception as e:
         logging.error(f"[Gemini Grounded] Error: {e}")
