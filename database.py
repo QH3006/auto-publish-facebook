@@ -262,8 +262,11 @@ def query_books(keyword: str = "", category: str = "", min_price: int = None, ma
             conditions.append("(CAST(id AS TEXT) LIKE ? OR LOWER(title) LIKE ? OR LOWER(author) LIKE ?)")
             params.extend([kw, kw, kw])
     if category:
-        conditions.append("LOWER(category) = ?")
-        params.append(category.strip().lower())
+        cat_clean = " ".join(category.strip().split()).lower()
+        conditions.append("TRIM(category) != ''")
+        cat_filter_py = cat_clean
+    else:
+        cat_filter_py = ""
     if min_price is not None or max_price is not None:
         conditions.append("price IS NOT NULL AND TRIM(price) != ''")
     if min_price is not None:
@@ -282,11 +285,19 @@ def query_books(keyword: str = "", category: str = "", min_price: int = None, ma
     order_map = {"id_asc": "ORDER BY id ASC", "price_asc": "ORDER BY CAST(REPLACE(REPLACE(price, '.', ''), ',', '') AS INTEGER) ASC", "price_desc": "ORDER BY CAST(REPLACE(REPLACE(price, '.', ''), ',', '') AS INTEGER) DESC", "title_asc": "ORDER BY title COLLATE NOCASE ASC"}
     order_clause = order_map.get(sort_by, "ORDER BY id DESC")
     query = f"SELECT id, post_id, local_path, title, author, category, price, status, is_published, is_single_book, is_reviewed, post_date, created_at FROM images {where_clause} {order_clause} LIMIT ?"
-    params.append(limit)
+    query_limit = limit if not cat_filter_py else max(limit, 5000)
+    params.append(query_limit)
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(query, tuple(params))
-        return [dict(r) for r in cursor.fetchall()]
+        rows = [dict(r) for r in cursor.fetchall()]
+    if cat_filter_py:
+        norm_cat = lambda s: " ".join((s or "").split()).lower()
+        exact = [r for r in rows if norm_cat(r.get("category")) == cat_filter_py]
+        if not exact:
+            exact = [r for r in rows if cat_filter_py in norm_cat(r.get("category"))]
+        return exact[:limit]
+    return rows
 def get_all_books(limit: int = 100) -> List[Dict]:
     return query_books(limit=limit)
 def delete_image_record(image_id: int) -> bool:

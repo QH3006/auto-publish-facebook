@@ -124,7 +124,7 @@ class AdminRequestHandler(BaseHTTPRequestHandler):
             sort_by = p.get('sort_by', ['id_desc'])[0]
             min_p_int = int(min_p) if min_p and str(min_p).isdigit() else None
             max_p_int = int(max_p) if max_p and str(max_p).isdigit() else None
-            books = database.query_books(keyword=kw, category=cat, min_price=min_p_int, max_price=max_p_int, status=status, sort_by=sort_by)
+            books = database.query_books(keyword=kw, category=cat, min_price=min_p_int, max_price=max_p_int, status=status, sort_by=sort_by, limit=5000)
             self._send_json(books)
         elif path == '/api/leads':
             leads = database.get_leads("all")

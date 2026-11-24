@@ -38,7 +38,14 @@ def publish_photo_to_facebook(image_path: str, caption: str, fanpage_url: str = 
             try:
                 with open(config.COOKIES_PATH, "r", encoding="utf-8") as f:
                     cookies = json.load(f)
-                    context.add_cookies(cookies)
+                clean = []
+                for c in cookies:
+                    c2 = dict(c)
+                    if c2.get("sameSite") not in ("Strict", "Lax", "None"):
+                        c2["sameSite"] = "Lax"
+                    clean.append(c2)
+                if clean:
+                    context.add_cookies(clean)
             except Exception:
                 pass
         page = context.new_page() if not context.pages else context.pages[0]
@@ -108,21 +115,48 @@ def publish_photo_to_facebook(image_path: str, caption: str, fanpage_url: str = 
                 except Exception:
                     textbox.first.fill(caption)
                 time.sleep(2)
-            next_btn = dialog.locator("div[role='button']:has-text('Tiếp'), div[aria-label*='Tiếp'], div[role='button']:has-text('Next')")
-            if next_btn.count() > 0 and next_btn.first.is_visible():
+            next_btn = dialog.locator(
+                "div[aria-label='Tiếp'], div[aria-label='Next'], "
+                "div[role='button']:text-is('Tiếp'), div[role='button']:text-is('Next'), "
+                "button:text-is('Tiếp'), button:text-is('Next')"
+            ).last
+            if next_btn.count() == 0:
+                next_btn = dialog.locator("div[role='button']:has-text('Tiếp'), div[aria-label*='Tiếp'], div[role='button']:has-text('Next')").last
+            post_btn_selector = (
+                "div[aria-label='Đăng'], div[aria-label='Post'], "
+                "button[aria-label='Đăng'], button[aria-label='Post'], "
+                "div[role='button']:text-is('Đăng'), div[role='button']:text-is('Post'), "
+                "button:text-is('Đăng'), button:text-is('Post')"
+            )
+            if next_btn.count() > 0 and next_btn.is_visible():
                 try:
-                    next_btn.first.wait_for(state="visible", timeout=6000)
+                    for _ in range(15):
+                        if next_btn.get_attribute("aria-disabled") != "true":
+                            break
+                        time.sleep(1)
                     logging.info("Clicking Next/Tiep step...")
-                    next_btn.first.click()
-                    time.sleep(4)
+                    next_btn.click()
+                    for wait_i in range(24):
+                        time.sleep(0.5)
+                        if page.locator("div[role='dialog']:visible").locator(post_btn_selector).count() > 0:
+                            break
+                        if wait_i == 8 and next_btn.count() > 0 and next_btn.is_visible():
+                            try: next_btn.click()
+                            except Exception: pass
                 except Exception as ex_next:
                     logging.warning(f"Next button click warning: {ex_next}")
-            step2_dialog = page.locator("div[role='dialog']").first
-            post_btn = step2_dialog.locator("div[aria-label='Đăng'], div[aria-label='Post']").last
+            step2_dialog = page.locator("div[role='dialog']:visible").filter(has_text="Cài đặt bài viết").last
+            if step2_dialog.count() == 0:
+                step2_dialog = page.locator("div[role='dialog']:visible").filter(has_text="Post settings").last
+            if step2_dialog.count() == 0:
+                step2_dialog = page.locator("div[role='dialog']:visible").filter(has_text="Tạo bài viết").last
+            if step2_dialog.count() == 0:
+                step2_dialog = page.locator("div[role='dialog']:visible").last
+            post_btn = step2_dialog.locator(post_btn_selector).last
             if post_btn.count() == 0:
-                post_btn = page.locator("div[role='dialog'] div[aria-label='Đăng'], div[role='dialog'] div[aria-label='Post']").last
+                post_btn = page.locator("div[role='dialog']:visible").locator(post_btn_selector).last
             if post_btn.count() == 0:
-                post_btn = step2_dialog.locator("div[role='button']:text-is('Đăng'), div[role='button']:text-is('Post')").last
+                post_btn = page.locator("div[role='dialog']").locator(post_btn_selector).last
             if post_btn.count() > 0:
                 for _ in range(15):
                     if post_btn.get_attribute("aria-disabled") != "true":
