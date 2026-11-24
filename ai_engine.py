@@ -1,12 +1,12 @@
 import os
+import io
 import time
 import base64
 import json
 import logging
 import requests
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 from PIL import Image, ImageFilter, ImageStat, ImageChops
-from PIL import Image
 import config
 import book_lookup
 import ai_quota
@@ -81,40 +81,85 @@ YÊU CẦU ĐỊNH DẠNG BÀI ĐĂNG (3 ĐẾN 5 DÒNG):
 - Dòng cuối: Lời nhắn gọn gàng, tự nhiên theo mẫu: Nếu bạn muốn tìm đọc cuốn sách này, hãy nhắn liền cho tiệm mình nhé! kèm 2-3 hashtag (#SachHay #TiemSachCuaThuong).
 - CHỈ xuất nội dung bài đăng hoàn chỉnh, không thêm lời chào hay giải thích thừa.
 """
-def image_to_base64(image_path: str) -> str:
+_gemini_key_idx = 0
+def _get_gemini_keys() -> List[str]:
+    keys = getattr(config, "GEMINI_API_KEYS", None) or []
+    if not keys and getattr(config, "GEMINI_API_KEY", ""):
+        keys = [k.strip() for k in config.GEMINI_API_KEY.split(",") if k.strip()]
+    return keys
+def _get_gemini_models() -> List[str]:
+    models = [config.GEMINI_MODEL]
+    for m in getattr(config, "GEMINI_FALLBACK_MODELS", []):
+        if m and m not in models:
+            models.append(m)
+    return models
+def image_to_base64(image_path: str, max_dim: Optional[int] = None) -> str:
+    limit = getattr(config, "GEMINI_VISION_MAX_DIM", 768) if max_dim is None else max_dim
+    if limit and limit > 0:
+        try:
+            with Image.open(image_path) as img:
+                if img.mode in ("RGBA", "P", "LA"):
+                    img = img.convert("RGB")
+                elif img.mode != "RGB":
+                    img = img.convert("RGB")
+                if max(img.size) > limit:
+                    img.thumbnail((limit, limit), Image.Resampling.LANCZOS)
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=82, optimize=True)
+                return base64.b64encode(buf.getvalue()).decode("utf-8")
+        except Exception:
+            pass
     with open(image_path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
-def _call_gemini_vision(image_path: str, prompt: str) -> Optional[str]:
-    api_key = config.GEMINI_API_KEY
-    if not api_key:
+def _execute_gemini_request(payload: Dict[str, Any], label: str) -> Optional[Dict[str, Any]]:
+    global _gemini_key_idx
+    keys = _get_gemini_keys()
+    if not keys:
         return None
+    models = _get_gemini_models()
+    last_status, last_err, last_model = 0, "", models[0]
+    for model in models:
+        for offset in range(len(keys)):
+            idx = (_gemini_key_idx + offset) % len(keys)
+            api_key = keys[idx]
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=45)
+                if resp.status_code == 200:
+                    _gemini_key_idx = idx
+                    data = resp.json()
+                    ai_quota.record_success("gemini", model, data.get("usageMetadata"))
+                    return data
+                last_status, last_err, last_model = resp.status_code, resp.text[:250], model
+                if resp.status_code == 429:
+                    logging.warning(f"[{label}] {model} (key #{idx+1}) đạt giới hạn 429, thử key/model khác...")
+                    if len(keys) == 1 and len(models) == 1:
+                        time.sleep(8)
+                        resp2 = requests.post(url, headers=headers, json=payload, timeout=45)
+                        if resp2.status_code == 200:
+                            data2 = resp2.json()
+                            ai_quota.record_success("gemini", model, data2.get("usageMetadata"))
+                            return data2
+                        last_status, last_err = resp2.status_code, resp2.text[:250]
+                    continue
+                logging.error(f"[{label}] {model} Error {resp.status_code}: {last_err}")
+                break
+            except Exception as e:
+                logging.error(f"[{label}] {model} Error: {e}")
+    if last_status:
+        ai_quota.record_error("gemini", last_model, last_status, last_err)
+    return None
+def _call_gemini_vision(image_path: str, prompt: str) -> Optional[str]:
     try:
         b64_img = image_to_base64(image_path)
-        ext = os.path.splitext(image_path)[1].lower()
-        mime = "image/png" if ext == ".png" else "image/jpeg"
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
-        headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
-        payload = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": mime, "data": b64_img}}]}]}
-        resp = requests.post(url, headers=headers, json=payload, timeout=45)
-        if resp.status_code == 200:
-            data = resp.json()
-            ai_quota.record_success("gemini", config.GEMINI_MODEL, data.get("usageMetadata"))
+        payload = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": b64_img}}]}]}
+        data = _execute_gemini_request(payload, "Gemini Vision")
+        if data:
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        if resp.status_code == 429:
-            logging.warning("[Gemini Vision] Đạt giới hạn req/phút, tự động chờ 12s để thử lại...")
-            time.sleep(12)
-            resp2 = requests.post(url, headers=headers, json=payload, timeout=45)
-            if resp2.status_code == 200:
-                data2 = resp2.json()
-                ai_quota.record_success("gemini", config.GEMINI_MODEL, data2.get("usageMetadata"))
-                return data2["candidates"][0]["content"]["parts"][0]["text"].strip()
-            resp = resp2
-        ai_quota.record_error("gemini", config.GEMINI_MODEL, resp.status_code, resp.text[:250])
-        logging.error(f"[Gemini Vision] Error {resp.status_code}: {resp.text[:250]}")
-        return None
     except Exception as e:
         logging.error(f"[Gemini Vision] Error: {e}")
-        return None
+    return None
 def _call_openai_compatible(messages: list, model: str = None) -> Optional[str]:
     api_key = config.OPENAI_API_KEY
     base_url = config.OPENAI_BASE_URL.rstrip("/")
@@ -162,35 +207,15 @@ def _call_ollama_vision(image_path: str, prompt: str) -> Optional[str]:
         logging.error(f"[Ollama Vision] Error: {e}")
         return None
 def _call_gemini_grounded(prompt: str, use_google_search: bool = False) -> Optional[str]:
-    api_key = config.GEMINI_API_KEY
-    if not api_key:
-        return None
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL}:generateContent"
-        headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
         payload: Dict[str, Any] = {"contents": [{"parts": [{"text": prompt}]}]}
         if use_google_search:
             payload["tools"] = [{"google_search": {}}]
-        resp = requests.post(url, headers=headers, json=payload, timeout=45)
-        if resp.status_code == 200:
-            data = resp.json()
-            ai_quota.record_success("gemini", config.GEMINI_MODEL, data.get("usageMetadata"))
+        data = _execute_gemini_request(payload, "Gemini Grounded")
+        if data:
             parts = data["candidates"][0]["content"]["parts"]
             text = "\n".join(p.get("text", "") for p in parts if p.get("text")).strip()
             return text or None
-        if resp.status_code == 429:
-            logging.warning("[Gemini Grounded] Đạt giới hạn req/phút, chờ 12s thử lại...")
-            time.sleep(12)
-            resp2 = requests.post(url, headers=headers, json=payload, timeout=45)
-            if resp2.status_code == 200:
-                data2 = resp2.json()
-                ai_quota.record_success("gemini", config.GEMINI_MODEL, data2.get("usageMetadata"))
-                parts = data2["candidates"][0]["content"]["parts"]
-                text = "\n".join(p.get("text", "") for p in parts if p.get("text")).strip()
-                return text or None
-            resp = resp2
-        ai_quota.record_error("gemini", config.GEMINI_MODEL, resp.status_code, resp.text[:250])
-        logging.error(f"[Gemini Grounded] Error {resp.status_code}: {resp.text[:250]}")
     except Exception as e:
         logging.error(f"[Gemini Grounded] Error: {e}")
     return None
@@ -208,7 +233,7 @@ def generate_caption_for_image(image_path: str, book_info: Optional[Dict[str, An
     provider = config.AI_PROVIDER.lower()
     result = None
     if provider == "gemini":
-        use_search = summary_data is None
+        use_search = (summary_data is None) and getattr(config, "GEMINI_USE_SEARCH_GROUNDING", False)
         result = _call_gemini_grounded(prompt, use_google_search=use_search)
     elif provider == "openai_compatible":
         result = _call_openai_compatible([{"role": "user", "content": prompt}])

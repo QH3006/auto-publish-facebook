@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import time
 import hashlib
 import logging
@@ -58,8 +59,38 @@ def has_buyer_intent(text: str) -> bool:
         if kw.lower() in norm_text:
             return True
     return False
+def _scanned_cache_path():
+    return config.STORAGE_DIR / "scanned_posts_cache.json"
+def _load_scanned_cache() -> Dict[str, float]:
+    path = _scanned_cache_path()
+    ttl = getattr(config, "LEAD_SCAN_CACHE_TTL_HOURS", 72) * 3600
+    now = time.time()
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return {k: float(v) for k, v in data.items() if now - float(v) < ttl}
+        except Exception:
+            pass
+    return {}
+def _save_scanned_cache(cache: Dict[str, float]):
+    try:
+        with open(_scanned_cache_path(), "w", encoding="utf-8") as f:
+            json.dump(cache, f)
+    except Exception:
+        pass
+def _make_post_cache_keys(group_url: str, post_link: str, card_text: str) -> List[str]:
+    keys = []
+    if post_link and post_link != group_url:
+        keys.append(f"url:{post_link.split('?')[0]}")
+    norm = re.sub(r"\s+", " ", (card_text or "").strip().lower())[:400]
+    if norm:
+        keys.append(f"txt:{hashlib.md5(norm.encode('utf-8')).hexdigest()}")
+    return keys
 def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
     purge_false_seller_leads()
+    scanned_cache = _load_scanned_cache()
     group_urls = config.MONITORED_GROUP_URLS
     if not group_urls:
         logging.warning("Chưa cấu hình URL nhóm Facebook trong config.MONITORED_GROUP_URLS.")
@@ -205,6 +236,12 @@ def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
                         has_img_intent = len(post_imgs) > 0 and any(kw in card_text.lower() for kw in ["ai có như hình", "ai có như ảnh", "tìm như hình", "tìm như ảnh", "cần tìm như", "ai có mấy cuốn này", "ai có mấy quyển này", "tìm những cuốn này", "ai có trong hình", "ai có trong ảnh", "ai có cuốn này", "ai có quyển này", "ai còn cuốn", "ảnh đính kèm"])
                         if not has_intent and not has_img_intent:
                             continue
+                        post_keys = _make_post_cache_keys(group_url, post_link, card_text)
+                        if any(k in scanned_cache for k in post_keys):
+                            continue
+                        now_ts = time.time()
+                        for k in post_keys:
+                            scanned_cache[k] = now_ts
                         if not ai_engine.verify_buyer_post_with_ai(card_text):
                             logging.info(f"   -> [BỎ QUA - AI XÁC ĐỊNH LÀ NGƯỜI BÁN]: \"{card_text[:60]}...\"")
                             continue
@@ -274,6 +311,7 @@ def scan_facebook_groups(max_days: int = 7, deep_scan: bool = True) -> int:
             except Exception as e:
                 logging.error(f"Lỗi khi quét nhóm {group_url}: {e}")
         context.close()
+    _save_scanned_cache(scanned_cache)
     logging.info(f"Hoàn thành quét nhóm. Phát hiện {new_leads_count} khách hỏi mua trùng khớp kho sách.")
     return new_leads_count
 if __name__ == "__main__":

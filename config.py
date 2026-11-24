@@ -42,7 +42,11 @@ FB_PAGE_ID = os.getenv("FB_PAGE_ID", "104950864827739")
 # 5. MULTI-PROVIDER AI CONFIGURATION (GEMINI / OPENAI-COMPATIBLE / LOCAL OLLAMA)
 AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-3.5-flash-lite"
+GEMINI_API_KEYS = [k.strip() for k in os.getenv("GEMINI_API_KEYS", GEMINI_API_KEY).split(",") if k.strip()]
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+GEMINI_FALLBACK_MODELS = [m.strip() for m in os.getenv("GEMINI_FALLBACK_MODELS", "gemini-2.5-flash-lite,gemini-2.5-flash").split(",") if m.strip()]
+GEMINI_VISION_MAX_DIM = int(os.getenv("GEMINI_VISION_MAX_DIM", "768"))
+GEMINI_USE_SEARCH_GROUNDING = os.getenv("GEMINI_USE_SEARCH_GROUNDING", "false").lower() == "true"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = "gpt-4o-mini"
@@ -87,6 +91,7 @@ SELLER_EXCLUDE_KEYWORDS = [
     "mình bán", "em bán", "cần bán", "muốn bán", "nhượng lại"
 ]
 LEAD_SCAN_INTERVAL_MINUTES = 120
+LEAD_SCAN_CACHE_TTL_HOURS = int(os.getenv("LEAD_SCAN_CACHE_TTL_HOURS", "72"))
 LEAD_SCAN_QUIET_START_HOUR = 22
 LEAD_SCAN_QUIET_END_HOUR = 6
 # 7. TELEGRAM BOT ASSISTANT (REMOTE MOBILE LOOKUP & LEAD ALERTS)
