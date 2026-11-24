@@ -63,26 +63,30 @@ function parsePriceInput(val) {
 function formatPrice(price) {
     return (!price || isNaN(parseInt(price))) ? '<span style="color:#8b949e">Chưa có giá</span>' : Number(price).toLocaleString('vi-VN') + ' đ';
 }
+function setElText(id, txt) { let el = document.getElementById(id); if (el) el.innerText = txt; }
+function setElWidth(id, pct) { let el = document.getElementById(id); if (el) el.style.width = pct + '%'; }
 function fetchMetrics() {
     fetch('/api/metrics').then(r => r.json()).then(d => {
-        document.getElementById('ram-val').innerText = d.ram_used_gb + ' / ' + d.ram_total_gb + ' GB';
-        document.getElementById('ram-desc').innerText = 'Đang dùng: ' + d.ram_percent + '%';
-        document.getElementById('ram-bar').style.width = d.ram_percent + '%';
-        document.getElementById('cpu-val').innerText = d.cpu_percent + ' %';
-        document.getElementById('cpu-bar').style.width = Math.min(d.cpu_percent, 100) + '%';
+        setElText('ram-val', d.ram_used_gb + ' / ' + d.ram_total_gb + ' GB');
+        setElText('ram-desc', 'Đang dùng: ' + d.ram_percent + '%');
+        setElWidth('ram-bar', d.ram_percent);
+        setElText('cpu-val', d.cpu_percent + ' %');
+        setElWidth('cpu-bar', Math.min(d.cpu_percent, 100));
         if (d.disk_used_gb) {
-            document.getElementById('disk-val').innerText = d.disk_used_gb + ' / ' + d.disk_total_gb + ' GB';
-            document.getElementById('disk-desc').innerText = 'Trống: ' + d.disk_free_gb + ' GB (' + d.disk_percent + '%)';
-            document.getElementById('disk-bar').style.width = d.disk_percent + '%';
+            setElText('disk-val', d.disk_used_gb + ' / ' + d.disk_total_gb + ' GB');
+            setElText('disk-desc', 'Trống: ' + d.disk_free_gb + ' GB (' + d.disk_percent + '%)');
+            setElWidth('disk-bar', d.disk_percent);
         }
         if (d.gpu_name) {
-            let shortGpu = d.gpu_name.replace('Intel(R)', 'Intel').replace('NVIDIA', '').trim();
-            document.getElementById('gpu-val').innerText = shortGpu || d.gpu_name;
-            document.getElementById('gpu-desc').innerText = 'Mức tải: ' + (d.gpu_percent || 0) + '%';
-            document.getElementById('gpu-bar').style.width = Math.min(d.gpu_percent || 0, 100) + '%';
+            let shortGpu = String(d.gpu_name).replace('Intel(R)', 'Intel').replace('NVIDIA', '').trim();
+            setElText('gpu-val', shortGpu || d.gpu_name);
+            setElText('gpu-desc', 'Mức tải: ' + (d.gpu_percent || 0) + '%');
+            setElWidth('gpu-bar', Math.min(d.gpu_percent || 0, 100));
         }
-        document.getElementById('stock-val').innerText = d.stats.available_in_stock + ' cuốn';
-        document.getElementById('sold-val').innerText = d.stats.sold_out + ' / ' + d.stats.pending_leads;
+        if (d.stats) {
+            setElText('stock-val', d.stats.available_in_stock + ' cuốn');
+            setElText('sold-val', d.stats.sold_out + ' / ' + d.stats.pending_leads);
+        }
     }).catch(() => {});
 }
 let allCategories = [];
